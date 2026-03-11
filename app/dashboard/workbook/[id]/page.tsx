@@ -4,8 +4,7 @@ import { useState, use, useEffect, useCallback, useRef, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { LineChart, Line, BarChart, Bar, ComposedChart, PieChart as RechartsPie, Pie, Cell, AreaChart, Area, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LabelList } from 'recharts'
-import { ChartContainer, ChartTooltip, ChartTooltipContent, ChartLegend, ChartLegendContent } from '@/components/ui/chart'
+import { LineChart, Line, BarChart, Bar, ComposedChart, PieChart as RechartsPie, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LabelList } from 'recharts'
 import {
   Table,
   TableBody,
@@ -20,7 +19,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { Download, ChevronDown, FileSpreadsheet, Sheet, Database, FileBarChart, TrendingUp, FileText, Scale, DollarSign, ShoppingCart, Calendar, Banknote, Package, ClipboardCheck, BarChart3, PieChart, Settings, Loader2, Shield, Sparkles, Flag } from 'lucide-react'
+import { Download, ChevronDown, Database, FileBarChart, TrendingUp, FileText, Scale, DollarSign, ShoppingCart, Calendar, Banknote, Package, ClipboardCheck, BarChart3, PieChart, Settings, Loader2, Shield, Sparkles, Flag } from 'lucide-react'
 import Image from 'next/image'
 import { AuditableCell, type SourceRef, type CellFlag } from '@/components/auditable-cell'
 import dynamic from 'next/dynamic'
