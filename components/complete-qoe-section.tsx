@@ -48,10 +48,13 @@ interface Props {
 
 // ─── Formatters ───────────────────────────────────────────────────────────────
 
+const fmtK = (v: number) =>
+  `$${new Intl.NumberFormat('en-US').format(Math.round(v / 1000))}K`
+
 const fmt = (v: number) =>
   Math.abs(v) >= 1e6
     ? `$${(v / 1e6).toFixed(1)}M`
-    : `$${(v / 1e3).toFixed(0)}K`
+    : fmtK(v)
 
 const fmtFull = (v: number) =>
   new Intl.NumberFormat('en-US', {
@@ -1387,7 +1390,7 @@ function AppendicesSection({
                 return (
                   <td key={m.month} className="text-right py-1 px-1">
                     <AuditableCell
-                      value={`$${Math.round(val / 1000)}K`}
+                      value={fmtK(val)}
                       source={`Revenue — ${m.month}`}
                       sourceRef={getSrcRef(liveCells, 'margins-month', `revenue_${m.month.toLowerCase()}`, 'TTM')}
                       cellId={getCellId(liveCells, 'margins-month', `revenue_${m.month.toLowerCase()}`, 'TTM')}
@@ -1401,7 +1404,7 @@ function AppendicesSection({
                 )
               })}
               <td className="text-right py-1 px-1 font-bold">
-                ${Math.round(MONTHLY_DEMO.reduce((s, m) => s + m.revenue, 0) / 1000)}K
+                {fmtK(MONTHLY_DEMO.reduce((s, m) => s + m.revenue, 0))}
               </td>
             </tr>
             {/* COGS row */}
@@ -1413,7 +1416,7 @@ function AppendicesSection({
                 return (
                   <td key={m.month} className="text-right py-1 px-1 text-muted-foreground">
                     <AuditableCell
-                      value={`$${Math.round(val / 1000)}K`}
+                      value={fmtK(val)}
                       source={`COGS — ${m.month}`}
                       sourceRef={getSrcRef(liveCells, 'margins-month', `cogs_${m.month.toLowerCase()}`, 'TTM')}
                       cellId={getCellId(liveCells, 'margins-month', `cogs_${m.month.toLowerCase()}`, 'TTM')}
@@ -1427,7 +1430,7 @@ function AppendicesSection({
                 )
               })}
               <td className="text-right py-1 px-1 text-muted-foreground">
-                ${Math.round(MONTHLY_DEMO.reduce((s, m) => s + m.cogs, 0) / 1000)}K
+                {fmtK(MONTHLY_DEMO.reduce((s, m) => s + m.cogs, 0))}
               </td>
             </tr>
             {/* Gross Profit */}
@@ -1436,21 +1439,21 @@ function AppendicesSection({
               {MONTHLY_DEMO.map((m) => {
                 const gp = m.revenue - m.cogs
                 return (
-                  <td key={m.month} className="text-right py-1 px-1">${Math.round(gp / 1000)}K</td>
+                  <td key={m.month} className="text-right py-1 px-1">{fmtK(gp)}</td>
                 )
               })}
               <td className="text-right py-1 px-1">
-                ${Math.round(MONTHLY_DEMO.reduce((s, m) => s + m.revenue - m.cogs, 0) / 1000)}K
+                {fmtK(MONTHLY_DEMO.reduce((s, m) => s + m.revenue - m.cogs, 0))}
               </td>
             </tr>
             {/* OpEx */}
             <tr className="border-b border-gray-100">
               <td className="py-1.5 text-muted-foreground pl-2">OpEx</td>
               {MONTHLY_DEMO.map((m) => (
-                <td key={m.month} className="text-right py-1 px-1 text-muted-foreground">${Math.round(m.opex / 1000)}K</td>
+                <td key={m.month} className="text-right py-1 px-1 text-muted-foreground">{fmtK(m.opex)}</td>
               ))}
               <td className="text-right py-1 px-1 text-muted-foreground">
-                ${Math.round(MONTHLY_DEMO.reduce((s, m) => s + m.opex, 0) / 1000)}K
+                {fmtK(MONTHLY_DEMO.reduce((s, m) => s + m.opex, 0))}
               </td>
             </tr>
             {/* EBITDA */}
@@ -1460,12 +1463,12 @@ function AppendicesSection({
                 const ebitda = m.revenue - m.cogs - m.opex
                 return (
                   <td key={m.month} className={`text-right py-1 px-1 ${ebitda < 0 ? 'text-red-600' : ''}`}>
-                    ${Math.round(ebitda / 1000)}K
+                    {fmtK(ebitda)}
                   </td>
                 )
               })}
               <td className="text-right py-1 px-1">
-                ${Math.round(MONTHLY_DEMO.reduce((s, m) => s + m.revenue - m.cogs - m.opex, 0) / 1000)}K
+                {fmtK(MONTHLY_DEMO.reduce((s, m) => s + m.revenue - m.cogs - m.opex, 0))}
               </td>
             </tr>
           </tbody>
