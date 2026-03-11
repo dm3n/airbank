@@ -489,10 +489,30 @@ export default function WorkbookPage({ params }: { params: Promise<{ id: string 
 
   const openFlagCount = useMemo(() => flags.filter(f => !f.resolved_at).length, [flags])
 
-  /** Create a flag from an AuditableCell and refresh. */
+  /** Create a flag from an AuditableCell.
+   *  For demo workbooks: creates a local-only flag so the UX is fully demonstrable.
+   *  For real workbooks: saves to the API then re-fetches all flags/cells. */
   const handleFlagCreate = useCallback(
     async (section: string, rowKey: string, period: string, flag: { title: string; body: string; flag_type: string }) => {
-      if (!id || isDemoWorkbook) return
+      if (!id) return
+
+      if (isDemoWorkbook) {
+        // Local-only demo flag — no API, update flags state directly
+        const demoFlag: FlagItem = {
+          id: `demo-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          section,
+          row_key: rowKey,
+          period: period || null,
+          flag_type: flag.flag_type,
+          severity: 'warning',
+          title: flag.title,
+          resolved_at: null,
+          created_by_ai: false,
+        }
+        setFlags(prev => [demoFlag, ...prev])
+        return
+      }
+
       const cellId = getCellId(section, rowKey, period)
       const res = await fetch(`/api/workbooks/${id}/flags`, {
         method: 'POST',
@@ -512,9 +532,14 @@ export default function WorkbookPage({ params }: { params: Promise<{ id: string 
         console.error('Flag create failed:', await res.text().catch(() => ''))
         return
       }
-      await fetchCells()
+      // Re-fetch flags only (fast path — don't reload all cells just for a flag)
+      const flagsRes = await fetch(`/api/workbooks/${id}/flags`)
+      if (flagsRes.ok) {
+        const flagData = await flagsRes.json()
+        setFlags(Array.isArray(flagData) ? flagData : [])
+      }
     },
-    [id, isDemoWorkbook, getCellId, fetchCells]
+    [id, isDemoWorkbook, getCellId]
   )
 
   const handleViewSource = useCallback((sourceRef: SourceRef) => {

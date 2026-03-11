@@ -70,7 +70,7 @@ function ConfidenceDot({ confidence }: { confidence: number }) {
   )
 }
 
-type PopoverTab = 'source' | 'flags' | 'flag-form'
+type PopoverTab = 'source' | 'flag-form'
 
 export function AuditableCell({
   value,
@@ -103,7 +103,6 @@ export function AuditableCell({
   const [flagBody, setFlagBody] = useState('')
   const [flagType, setFlagType] = useState('needs_review')
   const [isSubmittingFlag, setIsSubmittingFlag] = useState(false)
-  const [flagSuccess, setFlagSuccess] = useState(false)
 
   const displayedValue = localDisplay ?? value
   const unresolvedFlags = flags.filter(f => !f.resolved_at)
@@ -112,7 +111,6 @@ export function AuditableCell({
   const handleSave = async () => {
     setIsSaving(true)
     setSaveError(null)
-
     try {
       if (cellId && workbookId) {
         const res = await fetch(`/api/workbooks/${workbookId}/cells/${cellId}`, {
@@ -126,7 +124,6 @@ export function AuditableCell({
           return
         }
       }
-
       const parsed = parseFloat(editValue.replace(/[^0-9.-]/g, ''))
       if (!isNaN(parsed)) {
         setLocalDisplay(
@@ -163,7 +160,6 @@ export function AuditableCell({
       if (onFlagCreate) {
         await onFlagCreate({ title: flagTitle.trim(), body: flagBody.trim(), flag_type: flagType })
       } else if (workbookId) {
-        // Direct API call if no callback provided
         const row_key = cellId ?? 'unknown'
         await fetch(`/api/workbooks/${workbookId}/flags`, {
           method: 'POST',
@@ -182,9 +178,8 @@ export function AuditableCell({
       setFlagTitle('')
       setFlagBody('')
       setFlagType('needs_review')
-      setFlagSuccess(true)
-      setActiveTab('flags')
-      setTimeout(() => setFlagSuccess(false), 3000)
+      // Go back to source tab — the parent will have updated flags prop by now
+      setActiveTab('source')
     } finally {
       setIsSubmittingFlag(false)
     }
@@ -203,34 +198,34 @@ export function AuditableCell({
     <Popover open={isOpen} onOpenChange={handleClose}>
       <PopoverTrigger asChild>
         <span
-          className={`cursor-pointer transition-colors hover:text-blue-600 ${isReferenced ? 'text-blue-600 font-semibold underline decoration-blue-300 underline-offset-2' : isOpen ? 'text-blue-600 font-semibold' : hasFlags ? 'text-red-500' : ''} ${className}`}
+          className={`cursor-pointer transition-colors hover:text-blue-600 ${
+            isReferenced
+              ? 'text-blue-600 font-semibold underline decoration-blue-300 underline-offset-2'
+              : isOpen
+              ? 'text-blue-600 font-semibold'
+              : hasFlags
+              ? 'text-red-500 font-medium'
+              : ''
+          } ${className}`}
           onClick={() => setIsOpen(true)}
         >
           {displayedValue}
           {sourceRef && <ConfidenceDot confidence={sourceRef.confidence} />}
-          {hasFlags && (
-            <Flag className="inline-block ml-1 h-3 w-3 text-red-500" />
-          )}
+          {hasFlags && <Flag className="inline-block ml-1 h-3 w-3 text-red-500" />}
         </span>
       </PopoverTrigger>
       <PopoverContent className="w-80" align="start">
         {!isEditing ? (
           <div className="space-y-3">
-            {/* Tabs */}
+            {/* Tabs: Source | + Flag */}
             <div className="flex gap-1 border-b pb-2">
               <button
-                className={`text-xs px-2 py-1 rounded ${activeTab === 'source' ? 'bg-muted font-medium' : 'text-muted-foreground hover:text-foreground'}`}
+                className={`text-xs px-2 py-1 rounded flex items-center gap-1 ${activeTab === 'source' ? 'bg-muted font-medium' : 'text-muted-foreground hover:text-foreground'}`}
                 onClick={() => setActiveTab('source')}
               >
                 Source
-              </button>
-              <button
-                className={`text-xs px-2 py-1 rounded flex items-center gap-1 ${activeTab === 'flags' ? 'bg-muted font-medium' : 'text-muted-foreground hover:text-foreground'}`}
-                onClick={() => setActiveTab('flags')}
-              >
-                Flags
                 {unresolvedFlags.length > 0 && (
-                  <span className="bg-blue-500 text-white text-[10px] rounded-full px-1 leading-none py-0.5">
+                  <span className="bg-red-500 text-white text-[10px] rounded-full px-1 leading-none py-0.5">
                     {unresolvedFlags.length}
                   </span>
                 )}
@@ -245,6 +240,27 @@ export function AuditableCell({
 
             {activeTab === 'source' && (
               <>
+                {/* Inline flags — shown when any exist */}
+                {unresolvedFlags.length > 0 && (
+                  <div className="rounded-md border border-red-200 bg-red-50/60 p-2.5 space-y-1.5">
+                    <div className="flex items-center gap-1.5 text-xs font-semibold text-red-600 mb-1">
+                      <Flag className="h-3 w-3" />
+                      {unresolvedFlags.length} Open Flag{unresolvedFlags.length !== 1 ? 's' : ''}
+                    </div>
+                    {unresolvedFlags.map(flag => (
+                      <div key={flag.id} className="text-xs text-foreground/80 flex items-start gap-1.5 leading-snug">
+                        <span className="text-red-400 mt-px shrink-0">•</span>
+                        <span>
+                          <span className="font-medium">{flag.title}</span>
+                          {' '}
+                          <span className="text-muted-foreground capitalize">({flag.flag_type.replace(/_/g, ' ')})</span>
+                          {flag.created_by_ai && <span className="ml-1 text-[10px] bg-blue-50 text-blue-600 px-1 rounded">AI</span>}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
                 <div>
                   <div className="text-sm font-semibold mb-1">Value</div>
                   <div className="text-lg font-mono">{displayedValue}</div>
@@ -318,41 +334,6 @@ export function AuditableCell({
               </>
             )}
 
-            {activeTab === 'flags' && (
-              <div className="space-y-2">
-                {flagSuccess && (
-                  <div className="flex items-center gap-1.5 text-xs text-blue-600 bg-blue-50 rounded px-2 py-1.5">
-                    <Check className="h-3 w-3 flex-shrink-0" />
-                    Flag saved — refreshing…
-                  </div>
-                )}
-                {flags.length === 0 ? (
-                  <p className="text-xs text-muted-foreground text-center py-2">No flags on this cell.</p>
-                ) : (
-                  flags.map(flag => (
-                    <div
-                      key={flag.id}
-                      className={`rounded-md border px-3 py-2 text-xs space-y-1 ${flag.resolved_at ? 'opacity-50' : ''}`}
-                    >
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="flex items-center gap-1.5">
-                          <Flag className={`h-3 w-3 flex-shrink-0 ${flag.created_by_ai ? 'text-blue-500' : 'text-gray-400'}`} />
-                          <span className="font-medium leading-tight">{flag.title}</span>
-                        </div>
-                        {flag.resolved_at && (
-                          <span className="text-[10px] text-muted-foreground whitespace-nowrap">Resolved</span>
-                        )}
-                      </div>
-                      <div className="text-muted-foreground flex items-center gap-1">
-                        <span className="capitalize">{flag.flag_type.replace(/_/g, ' ')}</span>
-                        {flag.created_by_ai && <span className="text-[10px] bg-blue-50 text-blue-600 px-1 rounded">AI</span>}
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-            )}
-
             {activeTab === 'flag-form' && (
               <div className="space-y-3">
                 <div className="text-sm font-semibold">Flag for Review</div>
@@ -376,6 +357,8 @@ export function AuditableCell({
                     onChange={e => setFlagTitle(e.target.value)}
                     placeholder="Brief description..."
                     className="text-sm"
+                    autoFocus
+                    onKeyDown={e => { if (e.key === 'Enter' && flagTitle.trim()) handleFlagSubmit() }}
                   />
                 </div>
                 <div>
@@ -399,7 +382,7 @@ export function AuditableCell({
                     disabled={!flagTitle.trim() || isSubmittingFlag}
                   >
                     <Flag className="mr-2 h-3 w-3" />
-                    {isSubmittingFlag ? 'Flagging…' : 'Flag'}
+                    {isSubmittingFlag ? 'Saving…' : 'Flag'}
                   </Button>
                 </div>
               </div>
@@ -427,22 +410,11 @@ export function AuditableCell({
               </div>
             )}
             <div className="flex gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                className="flex-1"
-                onClick={handleCancel}
-                disabled={isSaving}
-              >
+              <Button variant="outline" size="sm" className="flex-1" onClick={handleCancel} disabled={isSaving}>
                 <X className="mr-2 h-3 w-3" />
                 Cancel
               </Button>
-              <Button
-                size="sm"
-                className="flex-1"
-                onClick={handleSave}
-                disabled={isSaving}
-              >
+              <Button size="sm" className="flex-1" onClick={handleSave} disabled={isSaving}>
                 <Check className="mr-2 h-3 w-3" />
                 {isSaving ? 'Saving…' : 'Save'}
               </Button>

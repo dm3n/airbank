@@ -51,9 +51,7 @@ export interface WorkbookSettingsDialogProps {
   onDeleted?: () => void
 }
 
-const connectedIntegrations = [
-  { name: 'Sandbox Alpine', status: 'complete' as const },
-]
+const connectedIntegrations: { name: string; status: 'complete' | 'pending' | 'attention' }[] = []
 
 const integrations = [
   { name: 'Dropbox', logo: '/integrations/dropbox.png' },
