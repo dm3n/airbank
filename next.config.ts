@@ -25,8 +25,9 @@ const nextConfig: NextConfig = {
     optimizeCss: true,
   },
 
-  // Aggressive HTTP caching for static assets
+  // Aggressive HTTP caching for static assets (production only — dev needs no-store so HMR works)
   async headers() {
+    if (process.env.NODE_ENV !== 'production') return []
     return [
       {
         source: '/_next/static/(.*)',
