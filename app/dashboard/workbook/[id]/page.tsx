@@ -26,6 +26,7 @@ import dynamic from 'next/dynamic'
 const WorkbookSettingsDialog = dynamic(() => import('@/components/workbook-settings-dialog').then(m => ({ default: m.WorkbookSettingsDialog })), { ssr: false })
 const DocumentViewerPanel = dynamic(() => import('@/components/document-viewer-panel').then(m => ({ default: m.DocumentViewerPanel })), { ssr: false })
 const RiskDiligenceSection = dynamic(() => import('@/components/risk-diligence-section').then(m => ({ default: m.RiskDiligenceSection })), { ssr: false, loading: () => <div className="animate-pulse h-64 rounded-lg bg-slate-50" /> })
+const CompleteQoeSection = dynamic(() => import('@/components/complete-qoe-section').then(m => ({ default: m.CompleteQoeSection })), { ssr: false, loading: () => <div className="animate-pulse h-64 rounded-lg bg-slate-50" /> })
 import { useLayoutContext } from '@/lib/layout-context'
 
 const formatCurrency = (value: number) => {
@@ -519,6 +520,7 @@ export default function WorkbookPage({ params }: { params: Promise<{ id: string 
 
   // Sidebar sections
   const sections = [
+    { id: 'complete-qoe', name: 'Complete QoE', icon: FileText },
     { id: 'qoe', name: 'Quality of Earnings', icon: TrendingUp },
     { id: 'income-statement', name: 'Income Statement', icon: FileText },
     { id: 'balance-sheet', name: 'Balance Sheet', icon: Scale },
@@ -622,6 +624,19 @@ export default function WorkbookPage({ params }: { params: Promise<{ id: string 
 
   const renderContent = () => {
     switch (activeSection) {
+      case 'complete-qoe':
+        return (
+          <CompleteQoeSection
+            liveCells={liveCells}
+            workbookId={id}
+            isDemoWorkbook={isDemoWorkbook}
+            periods={workbookPeriods}
+            onViewSource={handleViewSource}
+            onCellSave={fetchCells}
+            onCellReference={(ctx) => setCellRef(ctx)}
+          />
+        )
+
       case 'qoe': {
         const qoeTtmRev = getLiveValue('overview', 'total_revenue', 'TTM') ?? 68293742
         const qoeTtmBase = getLiveValue('qoe', 'ebitda_as_defined', 'TTM') ?? 7960816
@@ -2173,19 +2188,25 @@ export default function WorkbookPage({ params }: { params: Promise<{ id: string 
         </div>
 
         <div className="flex-1 p-3" suppressHydrationWarning>
-          {sections.map((section) => {
+          {sections.map((section, idx) => {
             const Icon = section.icon
+            const isCompleteQoe = section.id === 'complete-qoe'
+            const nextSection = sections[idx + 1]
             return (
-              <div
-                key={section.id}
-                suppressHydrationWarning
-                onClick={() => setActiveSection(section.id)}
-                className={`flex items-center px-3 py-2 rounded-md cursor-pointer hover:bg-accent mb-1 ${
-                  activeSection === section.id ? 'bg-accent' : ''
-                }`}
-              >
-                <Icon className="mr-2 h-4 w-4" suppressHydrationWarning />
-                <span className="text-sm">{section.name}</span>
+              <div key={section.id}>
+                <div
+                  suppressHydrationWarning
+                  onClick={() => setActiveSection(section.id)}
+                  className={`flex items-center px-3 py-2 rounded-md cursor-pointer hover:bg-accent mb-1 ${
+                    activeSection === section.id ? 'bg-accent' : ''
+                  }`}
+                >
+                  <Icon className="mr-2 h-4 w-4" suppressHydrationWarning />
+                  <span className="text-sm">{section.name}</span>
+                </div>
+                {isCompleteQoe && nextSection && (
+                  <div className="my-3 mx-2 border-t border-border" />
+                )}
               </div>
             )
           })}
