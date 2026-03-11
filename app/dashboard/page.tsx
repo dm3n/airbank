@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import { FileText, ChevronRight, Loader2, CheckCircle2, AlertCircle, Plus } from 'lucide-react'
+import { FileText, ChevronRight, Loader2, CheckCircle2, Plus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 
 interface Workbook {
@@ -54,7 +54,6 @@ const SANDBOX: Workbook = {
 
 export default function DashboardOverview() {
   const [workbooks, setWorkbooks] = useState<Workbook[] | null>(null)
-  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => { document.title = 'Airbank - Overview' }, [])
 
@@ -65,7 +64,7 @@ export default function DashboardOverview() {
         return res.json()
       })
       .then((data) => setWorkbooks([SANDBOX, ...(Array.isArray(data) ? data : [])]))
-      .catch((e) => { setWorkbooks([SANDBOX]); setError(e.message) })
+      .catch(() => setWorkbooks([SANDBOX]))
   }, [])
 
   return (
@@ -77,19 +76,11 @@ export default function DashboardOverview() {
       </div>
 
       {/* Loading skeletons */}
-      {workbooks === null && !error && (
+      {workbooks === null && (
         <div className="space-y-px">
           {[1, 2, 3].map((i) => (
             <div key={i} className="h-14 bg-muted/30 animate-pulse rounded-md" />
           ))}
-        </div>
-      )}
-
-      {/* Error */}
-      {error && (
-        <div className="flex flex-col items-center justify-center py-20 text-center">
-          <AlertCircle className="h-7 w-7 text-muted-foreground/40 mb-3" />
-          <p className="text-sm text-muted-foreground">Could not load workbooks</p>
         </div>
       )}
 
