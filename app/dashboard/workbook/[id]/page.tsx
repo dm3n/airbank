@@ -19,7 +19,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { Download, ChevronDown, Database, FileBarChart, TrendingUp, FileText, Scale, DollarSign, ShoppingCart, Calendar, Banknote, Package, ClipboardCheck, BarChart3, PieChart, Settings, Loader2, Shield, Sparkles, Flag } from 'lucide-react'
+import { Download, ChevronDown, Database, FileBarChart, TrendingUp, FileText, Scale, DollarSign, ShoppingCart, Calendar, Banknote, Package, ClipboardCheck, BarChart3, PieChart, Settings, Loader2, Shield, Sparkles, Flag, GitMerge, CheckCircle2, AlertTriangle, XCircle } from 'lucide-react'
 import Image from 'next/image'
 import { AuditableCell, type SourceRef, type CellFlag } from '@/components/auditable-cell'
 import dynamic from 'next/dynamic'
@@ -532,6 +532,7 @@ export default function WorkbookPage({ params }: { params: Promise<{ id: string 
     { id: 'sales-channel', name: 'Sales by Channel', icon: ShoppingCart },
     { id: 'margins-month', name: 'Margins by Month', icon: Calendar },
     { id: 'proof-cash', name: 'Proof of Cash', icon: Banknote },
+    { id: 'three-way-match', name: 'Three-Way Match', icon: GitMerge },
     { id: 'working-capital', name: 'Working Capital', icon: DollarSign },
     { id: 'net-debt', name: 'Net Debt & Debt-Like Items', icon: Scale },
     { id: 'customer-concentration', name: 'Customer Concentration', icon: PieChart },
@@ -551,6 +552,7 @@ export default function WorkbookPage({ params }: { params: Promise<{ id: string 
     'sales-channel': 'Sales by Channel',
     'margins-month': 'Margins by Month',
     'proof-cash': 'Proof of Cash',
+    'three-way-match': 'Three-Way Match',
     'working-capital': 'Working Capital',
     'net-debt': 'Net Debt',
     'customer-concentration': 'Customer Concentration',
@@ -1355,6 +1357,297 @@ export default function WorkbookPage({ params }: { params: Promise<{ id: string 
             </div>
           </div>
         )
+
+      case 'three-way-match': {
+        const TWM_PERIODS = ['FY20', 'FY21', 'FY22', 'TTM'] as const
+        // Demo data — live cells override via getLiveValue
+        const twmBank  = { FY20: 42228741, FY21: 51518476, FY22: 62788294, TTM: 68322847 }
+        const twmGL    = { FY20: 42187456, FY21: 51482903, FY22: 62745381, TTM: 68293742 }
+        const twmTax   = { FY20: 42112000, FY21: 51390000, FY22: 62636000, TTM: null    }
+
+        const getBank = (p: string) => getLiveValue('proof-revenue', 'bank_deposit_revenue', p) ?? (isDemoWorkbook ? (twmBank as Record<string,number|null>)[p] ?? null : null)
+        const getGL   = (p: string) => getLiveValue('proof-revenue', 'gl_revenue',           p) ?? (isDemoWorkbook ? (twmGL  as Record<string,number|null>)[p] ?? null : null)
+        const getTax  = (p: string) => getLiveValue('proof-revenue', 'tax_return_revenue',   p) ?? (isDemoWorkbook ? (twmTax as Record<string,number|null>)[p] ?? null : null)
+
+        const VAR_WARN = 0.0025  // 0.25%
+        const VAR_FAIL = 0.005   // 0.50%
+
+        type MatchStatus = 'pass' | 'review' | 'fail' | 'na'
+        const varStatus = (a: number | null, b: number | null): MatchStatus => {
+          if (a === null || b === null) return 'na'
+          const pct = Math.abs((a - b) / Math.max(a, b))
+          if (pct > VAR_FAIL) return 'fail'
+          if (pct > VAR_WARN) return 'review'
+          return 'pass'
+        }
+        const StatusBadge = ({ status }: { status: MatchStatus }) => {
+          if (status === 'pass')   return <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded px-1.5 py-0.5"><CheckCircle2 className="h-3 w-3"/>PASS</span>
+          if (status === 'review') return <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5"><AlertTriangle className="h-3 w-3"/>REVIEW</span>
+          if (status === 'fail')   return <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-red-700 bg-red-50 border border-red-200 rounded px-1.5 py-0.5"><XCircle className="h-3 w-3"/>FAIL</span>
+          return <span className="text-[10px] text-muted-foreground">N/A</span>
+        }
+        const fmtVar = (a: number | null, b: number | null) => {
+          if (a === null || b === null) return { amt: 'N/A', pct: '' }
+          const diff = a - b
+          const pct = b !== 0 ? (diff / Math.abs(b)) * 100 : 0
+          return { amt: (diff >= 0 ? '+' : '') + formatCurrency(diff), pct: `${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%` }
+        }
+
+        // Build summary for source panels
+        const ttmBank = getBank('TTM')
+        const ttmGL   = getGL('TTM')
+        const fy22Tax = getTax('FY22')
+
+        // Auto-flag variances to find
+        const autoFindings: { period: string; desc: string; status: MatchStatus }[] = []
+        TWM_PERIODS.forEach(p => {
+          const b = getBank(p), g = getGL(p), t = getTax(p)
+          const bgSt = varStatus(b, g)
+          const gtSt = varStatus(g, t)
+          if (bgSt === 'fail')   autoFindings.push({ period: p, desc: `Bank vs GL variance exceeds 0.50% — requires explanation`, status: 'fail' })
+          else if (bgSt === 'review') autoFindings.push({ period: p, desc: `Bank vs GL variance ${fmtVar(b,g).pct} — timing difference, verify AR movement`, status: 'review' })
+          if (gtSt === 'fail')   autoFindings.push({ period: p, desc: `GL vs Tax variance exceeds 0.50% — potential income recognition issue`, status: 'fail' })
+          else if (gtSt === 'review') autoFindings.push({ period: p, desc: `GL vs Tax variance ${fmtVar(g,t).pct} — likely deferred revenue presentation`, status: 'review' })
+        })
+
+        return (
+          <div>
+            <h2 className="text-2xl font-bold mb-1">Three-Way Revenue Match</h2>
+            <p className="text-sm text-muted-foreground mb-6">Bank Deposits · General Ledger · Tax Returns — reconciled across all periods</p>
+
+            {/* Source panels */}
+            <div className="grid grid-cols-3 gap-4 mb-8">
+              <div className="rounded-lg border bg-card p-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="h-2.5 w-2.5 rounded-full bg-blue-500"/>
+                  <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Bank Deposits</span>
+                </div>
+                <div className="text-2xl font-bold font-mono">{ttmBank ? formatCurrency(ttmBank) : '—'}</div>
+                <div className="text-xs text-muted-foreground mt-1">TTM · Per bank statements</div>
+                <div className="mt-3 text-xs text-muted-foreground">Source of truth for cash received. Includes all deposit activity netted for non-revenue items.</div>
+              </div>
+              <div className="rounded-lg border bg-card p-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="h-2.5 w-2.5 rounded-full bg-violet-500"/>
+                  <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">General Ledger</span>
+                </div>
+                <div className="text-2xl font-bold font-mono">{ttmGL ? formatCurrency(ttmGL) : '—'}</div>
+                <div className="text-xs text-muted-foreground mt-1">TTM · Per accounting system</div>
+                <div className="mt-3 text-xs text-muted-foreground">Accrual-basis revenue as recognized. Timing differences from bank drive AR movements in Proof of Cash.</div>
+              </div>
+              <div className="rounded-lg border bg-card p-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="h-2.5 w-2.5 rounded-full bg-slate-400"/>
+                  <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Tax Returns</span>
+                </div>
+                <div className="text-2xl font-bold font-mono">{fy22Tax ? formatCurrency(fy22Tax) : '—'}</div>
+                <div className="text-xs text-muted-foreground mt-1">FY22 · Most recent filed return</div>
+                <div className="mt-3 text-xs text-muted-foreground">Cash or modified-accrual basis per Form 1120. TTM unavailable — return not yet filed.</div>
+              </div>
+            </div>
+
+            {/* Reconciliation table */}
+            <div className="rounded-md border overflow-x-auto mb-8">
+              <Table>
+                <TableHeader>
+                  <TableRow className="bg-muted/40">
+                    <TableHead className="font-semibold w-[220px]">Line</TableHead>
+                    {TWM_PERIODS.map(p => <TableHead key={p} className="text-right font-semibold">{p}</TableHead>)}
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {/* Bank row */}
+                  <TableRow data-row-key="bank_deposit_revenue" className="border-b">
+                    <TableCell className="font-medium flex items-center gap-2"><span className="h-2 w-2 rounded-full bg-blue-500 inline-block"/>Bank Deposits</TableCell>
+                    {TWM_PERIODS.map(p => {
+                      const val = getBank(p)
+                      return (
+                        <TableCell key={p} className="text-right font-mono text-sm">
+                          {val !== null ? (
+                            <AuditableCell
+                              value={formatCurrency(val)}
+                              source={`Bank Statements — ${p}`}
+                              sourceRef={getCellSourceRef('proof-revenue', 'bank_deposit_revenue', p)}
+                              cellId={getCellId('proof-revenue', 'bank_deposit_revenue', p)}
+                              workbookId={isDemoWorkbook ? undefined : id}
+                              flags={getCellFlags('proof-revenue', 'bank_deposit_revenue', p)}
+                              onViewSource={handleViewSource}
+                              onFlagCreate={(f) => handleFlagCreate('proof-revenue', 'bank_deposit_revenue', p, f)}
+                              period={p}
+                            />
+                          ) : <span className="text-muted-foreground">—</span>}
+                        </TableCell>
+                      )
+                    })}
+                  </TableRow>
+                  {/* GL row */}
+                  <TableRow data-row-key="gl_revenue" className="border-b">
+                    <TableCell className="font-medium flex items-center gap-2"><span className="h-2 w-2 rounded-full bg-violet-500 inline-block"/>GL Revenue</TableCell>
+                    {TWM_PERIODS.map(p => {
+                      const val = getGL(p)
+                      return (
+                        <TableCell key={p} className="text-right font-mono text-sm">
+                          {val !== null ? (
+                            <AuditableCell
+                              value={formatCurrency(val)}
+                              source={`General Ledger — ${p}`}
+                              sourceRef={getCellSourceRef('proof-revenue', 'gl_revenue', p)}
+                              cellId={getCellId('proof-revenue', 'gl_revenue', p)}
+                              workbookId={isDemoWorkbook ? undefined : id}
+                              flags={getCellFlags('proof-revenue', 'gl_revenue', p)}
+                              onViewSource={handleViewSource}
+                              onFlagCreate={(f) => handleFlagCreate('proof-revenue', 'gl_revenue', p, f)}
+                              period={p}
+                            />
+                          ) : <span className="text-muted-foreground">—</span>}
+                        </TableCell>
+                      )
+                    })}
+                  </TableRow>
+                  {/* Tax row */}
+                  <TableRow data-row-key="tax_return_revenue" className="border-b-2 border-border">
+                    <TableCell className="font-medium flex items-center gap-2"><span className="h-2 w-2 rounded-full bg-slate-400 inline-block"/>Tax Return Revenue</TableCell>
+                    {TWM_PERIODS.map(p => {
+                      const val = getTax(p)
+                      return (
+                        <TableCell key={p} className="text-right font-mono text-sm">
+                          {val !== null ? (
+                            <AuditableCell
+                              value={formatCurrency(val)}
+                              source={`Form 1120 — ${p}`}
+                              sourceRef={getCellSourceRef('proof-revenue', 'tax_return_revenue', p)}
+                              cellId={getCellId('proof-revenue', 'tax_return_revenue', p)}
+                              workbookId={isDemoWorkbook ? undefined : id}
+                              flags={getCellFlags('proof-revenue', 'tax_return_revenue', p)}
+                              onViewSource={handleViewSource}
+                              onFlagCreate={(f) => handleFlagCreate('proof-revenue', 'tax_return_revenue', p, f)}
+                              period={p}
+                            />
+                          ) : <span className="text-xs text-muted-foreground italic">Not filed</span>}
+                        </TableCell>
+                      )
+                    })}
+                  </TableRow>
+                  {/* Variance rows */}
+                  <TableRow data-row-key="var_bank_gl" className="bg-muted/20">
+                    <TableCell className="text-sm text-muted-foreground pl-6">Bank vs GL</TableCell>
+                    {TWM_PERIODS.map(p => {
+                      const b = getBank(p), g = getGL(p)
+                      const { amt, pct } = fmtVar(b, g)
+                      const st = varStatus(b, g)
+                      return (
+                        <TableCell key={p} className="text-right text-sm">
+                          <div className={`font-mono ${st === 'fail' ? 'text-red-600' : st === 'review' ? 'text-amber-600' : 'text-emerald-600'}`}>{amt}</div>
+                          <div className="text-[10px] text-muted-foreground">{pct}</div>
+                        </TableCell>
+                      )
+                    })}
+                  </TableRow>
+                  <TableRow data-row-key="var_gl_tax" className="bg-muted/20">
+                    <TableCell className="text-sm text-muted-foreground pl-6">GL vs Tax</TableCell>
+                    {TWM_PERIODS.map(p => {
+                      const g = getGL(p), t = getTax(p)
+                      const { amt, pct } = fmtVar(g, t)
+                      const st = varStatus(g, t)
+                      return (
+                        <TableCell key={p} className="text-right text-sm">
+                          {st === 'na'
+                            ? <span className="text-xs text-muted-foreground italic">N/A</span>
+                            : <>
+                                <div className={`font-mono ${st === 'fail' ? 'text-red-600' : st === 'review' ? 'text-amber-600' : 'text-emerald-600'}`}>{amt}</div>
+                                <div className="text-[10px] text-muted-foreground">{pct}</div>
+                              </>
+                          }
+                        </TableCell>
+                      )
+                    })}
+                  </TableRow>
+                  <TableRow data-row-key="var_bank_tax" className="bg-muted/20">
+                    <TableCell className="text-sm text-muted-foreground pl-6">Bank vs Tax</TableCell>
+                    {TWM_PERIODS.map(p => {
+                      const b = getBank(p), t = getTax(p)
+                      const { amt, pct } = fmtVar(b, t)
+                      const st = varStatus(b, t)
+                      return (
+                        <TableCell key={p} className="text-right text-sm">
+                          {st === 'na'
+                            ? <span className="text-xs text-muted-foreground italic">N/A</span>
+                            : <>
+                                <div className={`font-mono ${st === 'fail' ? 'text-red-600' : st === 'review' ? 'text-amber-600' : 'text-emerald-600'}`}>{amt}</div>
+                                <div className="text-[10px] text-muted-foreground">{pct}</div>
+                              </>
+                          }
+                        </TableCell>
+                      )
+                    })}
+                  </TableRow>
+                  {/* Status row */}
+                  <TableRow className="bg-muted/40 font-semibold">
+                    <TableCell className="text-sm font-semibold">Match Status</TableCell>
+                    {TWM_PERIODS.map(p => {
+                      const b = getBank(p), g = getGL(p), t = getTax(p)
+                      const statuses = [varStatus(b, g), varStatus(g, t), varStatus(b, t)].filter(s => s !== 'na')
+                      const overall: MatchStatus = statuses.includes('fail') ? 'fail' : statuses.includes('review') ? 'review' : 'pass'
+                      return (
+                        <TableCell key={p} className="text-right">
+                          <StatusBadge status={overall} />
+                        </TableCell>
+                      )
+                    })}
+                  </TableRow>
+                </TableBody>
+              </Table>
+            </div>
+
+            {/* Threshold legend */}
+            <div className="flex items-center gap-6 text-xs text-muted-foreground mb-8">
+              <span className="font-semibold">Thresholds:</span>
+              <span className="flex items-center gap-1"><CheckCircle2 className="h-3.5 w-3.5 text-emerald-600"/>Pass — variance &lt;0.25%</span>
+              <span className="flex items-center gap-1"><AlertTriangle className="h-3.5 w-3.5 text-amber-500"/>Review — 0.25%–0.50%</span>
+              <span className="flex items-center gap-1"><XCircle className="h-3.5 w-3.5 text-red-500"/>Fail — variance &gt;0.50%</span>
+            </div>
+
+            {/* Auto-flagged findings */}
+            <div className="mb-8">
+              <h3 className="text-base font-semibold mb-3 flex items-center gap-2">
+                <Flag className="h-4 w-4 text-muted-foreground"/>
+                Auto-Flagged Findings
+              </h3>
+              {autoFindings.length === 0 ? (
+                <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 flex items-center gap-2">
+                  <CheckCircle2 className="h-4 w-4"/>
+                  All variances within threshold — no findings to review.
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {autoFindings.map((f, i) => (
+                    <div
+                      key={i}
+                      className={`rounded-lg border px-4 py-3 flex items-start gap-3 ${f.status === 'fail' ? 'border-red-200 bg-red-50' : 'border-amber-200 bg-amber-50'}`}
+                    >
+                      {f.status === 'fail' ? <XCircle className="h-4 w-4 text-red-500 mt-0.5 shrink-0"/> : <AlertTriangle className="h-4 w-4 text-amber-500 mt-0.5 shrink-0"/>}
+                      <div>
+                        <span className={`text-xs font-semibold mr-2 ${f.status === 'fail' ? 'text-red-700' : 'text-amber-700'}`}>{f.period}</span>
+                        <span className={`text-sm ${f.status === 'fail' ? 'text-red-700' : 'text-amber-700'}`}>{f.desc}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Explanation notes */}
+            <div className="rounded-lg border bg-card p-5">
+              <h3 className="text-sm font-semibold mb-3">Reconciling Notes</h3>
+              <div className="space-y-2 text-sm text-muted-foreground">
+                <p><span className="font-medium text-foreground">Bank vs GL:</span> Residual variances ($29K–$43K, 0.04%–0.10%) represent timing differences between cash receipt and accrual recognition. Reconciled through AR movement in Proof of Cash — no unexplained items.</p>
+                <p><span className="font-medium text-foreground">GL vs Tax:</span> Consistent $75K–$109K variance (0.17%–0.18%) across FY20–FY22. Attributable to deferred revenue reclassification on tax return (cash basis election for certain service contracts). Consistent treatment confirmed across all periods.</p>
+                <p><span className="font-medium text-foreground">TTM Tax:</span> TTM return not yet filed. Three-way match will complete upon filing; FY22 figures confirm pattern integrity.</p>
+              </div>
+            </div>
+          </div>
+        )
+      }
 
       case 'working-capital':
         return (
