@@ -1144,20 +1144,55 @@ export default function WorkbookPage({ params }: { params: Promise<{ id: string 
                 </TableHeader>
                 <TableBody>
                   {marginsByMonthData.map((row, idx) => {
-                    // Use live data for revenue/cogs/opex if available, keyed by month
-                    const liveRev = getLiveValue('margins-month', 'revenue', row.month) ?? row.revenue
-                    const liveCogs = getLiveValue('margins-month', 'cogs', row.month) ?? row.cogs
-                    const liveOpex = getLiveValue('margins-month', 'opex', row.month) ?? row.opex
+                    const liveRev  = getLiveValue('margins-month', 'revenue', row.month) ?? row.revenue
+                    const liveCogs = getLiveValue('margins-month', 'cogs',    row.month) ?? row.cogs
+                    const liveOpex = getLiveValue('margins-month', 'opex',    row.month) ?? row.opex
                     const grossMargin = liveRev - liveCogs
-                    const netMargin = liveRev - liveCogs - liveOpex
+                    const netMargin   = liveRev - liveCogs - liveOpex
                     const gmPct = liveRev > 0 ? (grossMargin / liveRev) * 100 : 0
-                    const nmPct = liveRev > 0 ? (netMargin / liveRev) * 100 : 0
+                    const nmPct = liveRev > 0 ? (netMargin   / liveRev) * 100 : 0
                     return (
                       <TableRow key={idx}>
                         <TableCell className="font-medium">{row.month}</TableCell>
-                        <TableCell className="text-right font-mono text-sm">{formatCurrency(liveRev)}</TableCell>
-                        <TableCell className="text-right font-mono text-sm">{formatCurrency(liveCogs)}</TableCell>
-                        <TableCell className="text-right font-mono text-sm">{formatCurrency(liveOpex)}</TableCell>
+                        <TableCell className="text-right font-mono text-sm">
+                          <AuditableCell
+                            value={getDisplayValue('margins-month', 'revenue', row.month, row.revenue)}
+                            source={`Revenue — ${row.month}`}
+                            sourceRef={getCellSourceRef('margins-month', 'revenue', row.month)}
+                            cellId={getCellId('margins-month', 'revenue', row.month)}
+                            flags={getCellFlags('margins-month', 'revenue', row.month)}
+                            workbookId={isDemoWorkbook ? undefined : id}
+                            onViewSource={handleViewSource}
+                            onSave={fetchCells}
+                            period={row.month}
+                          />
+                        </TableCell>
+                        <TableCell className="text-right font-mono text-sm">
+                          <AuditableCell
+                            value={getDisplayValue('margins-month', 'cogs', row.month, row.cogs)}
+                            source={`COGS — ${row.month}`}
+                            sourceRef={getCellSourceRef('margins-month', 'cogs', row.month)}
+                            cellId={getCellId('margins-month', 'cogs', row.month)}
+                            flags={getCellFlags('margins-month', 'cogs', row.month)}
+                            workbookId={isDemoWorkbook ? undefined : id}
+                            onViewSource={handleViewSource}
+                            onSave={fetchCells}
+                            period={row.month}
+                          />
+                        </TableCell>
+                        <TableCell className="text-right font-mono text-sm">
+                          <AuditableCell
+                            value={getDisplayValue('margins-month', 'opex', row.month, row.opex)}
+                            source={`OpEx — ${row.month}`}
+                            sourceRef={getCellSourceRef('margins-month', 'opex', row.month)}
+                            cellId={getCellId('margins-month', 'opex', row.month)}
+                            flags={getCellFlags('margins-month', 'opex', row.month)}
+                            workbookId={isDemoWorkbook ? undefined : id}
+                            onViewSource={handleViewSource}
+                            onSave={fetchCells}
+                            period={row.month}
+                          />
+                        </TableCell>
                         <TableCell className="text-right font-mono text-sm">{formatCurrency(grossMargin)}</TableCell>
                         <TableCell className="text-right font-mono text-sm">{formatPercent(gmPct)}</TableCell>
                         <TableCell className="text-right font-mono text-sm">{formatCurrency(netMargin)}</TableCell>
@@ -1211,21 +1246,81 @@ export default function WorkbookPage({ params }: { params: Promise<{ id: string 
                 </TableHeader>
                 <TableBody>
                   {proofOfCashData.map((row, idx) => {
-                    const liveDeposits = getLiveValue('proof-cash', 'bank_deposits', row.month) ?? row.deposits
-                    const liveBegAR = getLiveValue('proof-cash', 'beginning_ar', row.month) ?? row.beginningAR
-                    const liveEndAR = getLiveValue('proof-cash', 'ending_ar', row.month) ?? row.endingAR
-                    const liveNonRev = getLiveValue('proof-cash', 'non_rev_deposits', row.month) ?? row.nonRevDeposits
-                    const liveRevGL = getLiveValue('proof-cash', 'revenue_gl', row.month) ?? row.revenueGL
-                    const calculated = liveDeposits - liveBegAR + liveEndAR - liveNonRev
-                    const variance = calculated - liveRevGL
+                    const liveDeposits = getLiveValue('proof-cash', 'bank_deposits',    row.month) ?? row.deposits
+                    const liveBegAR    = getLiveValue('proof-cash', 'beginning_ar',     row.month) ?? row.beginningAR
+                    const liveEndAR    = getLiveValue('proof-cash', 'ending_ar',        row.month) ?? row.endingAR
+                    const liveNonRev   = getLiveValue('proof-cash', 'non_rev_deposits', row.month) ?? row.nonRevDeposits
+                    const liveRevGL    = getLiveValue('proof-cash', 'revenue_gl',       row.month) ?? row.revenueGL
+                    const calculated   = liveDeposits - liveBegAR + liveEndAR - liveNonRev
+                    const variance     = calculated - liveRevGL
                     return (
                       <TableRow key={idx}>
                         <TableCell className="font-medium">{row.month}</TableCell>
-                        <TableCell className="text-right font-mono text-sm">{formatCurrency(liveDeposits)}</TableCell>
-                        <TableCell className="text-right font-mono text-sm">{formatCurrency(liveBegAR)}</TableCell>
-                        <TableCell className="text-right font-mono text-sm">{formatCurrency(liveEndAR)}</TableCell>
-                        <TableCell className="text-right font-mono text-sm">{formatCurrency(liveNonRev)}</TableCell>
-                        <TableCell className="text-right font-mono text-sm">{formatCurrency(liveRevGL)}</TableCell>
+                        <TableCell className="text-right font-mono text-sm">
+                          <AuditableCell
+                            value={getDisplayValue('proof-cash', 'bank_deposits', row.month, row.deposits)}
+                            source={`Bank Deposits — ${row.month}`}
+                            sourceRef={getCellSourceRef('proof-cash', 'bank_deposits', row.month)}
+                            cellId={getCellId('proof-cash', 'bank_deposits', row.month)}
+                            flags={getCellFlags('proof-cash', 'bank_deposits', row.month)}
+                            workbookId={isDemoWorkbook ? undefined : id}
+                            onViewSource={handleViewSource}
+                            onSave={fetchCells}
+                            period={row.month}
+                          />
+                        </TableCell>
+                        <TableCell className="text-right font-mono text-sm">
+                          <AuditableCell
+                            value={getDisplayValue('proof-cash', 'beginning_ar', row.month, row.beginningAR)}
+                            source={`Beginning AR — ${row.month}`}
+                            sourceRef={getCellSourceRef('proof-cash', 'beginning_ar', row.month)}
+                            cellId={getCellId('proof-cash', 'beginning_ar', row.month)}
+                            flags={getCellFlags('proof-cash', 'beginning_ar', row.month)}
+                            workbookId={isDemoWorkbook ? undefined : id}
+                            onViewSource={handleViewSource}
+                            onSave={fetchCells}
+                            period={row.month}
+                          />
+                        </TableCell>
+                        <TableCell className="text-right font-mono text-sm">
+                          <AuditableCell
+                            value={getDisplayValue('proof-cash', 'ending_ar', row.month, row.endingAR)}
+                            source={`Ending AR — ${row.month}`}
+                            sourceRef={getCellSourceRef('proof-cash', 'ending_ar', row.month)}
+                            cellId={getCellId('proof-cash', 'ending_ar', row.month)}
+                            flags={getCellFlags('proof-cash', 'ending_ar', row.month)}
+                            workbookId={isDemoWorkbook ? undefined : id}
+                            onViewSource={handleViewSource}
+                            onSave={fetchCells}
+                            period={row.month}
+                          />
+                        </TableCell>
+                        <TableCell className="text-right font-mono text-sm">
+                          <AuditableCell
+                            value={getDisplayValue('proof-cash', 'non_rev_deposits', row.month, row.nonRevDeposits)}
+                            source={`Non-Rev Deposits — ${row.month}`}
+                            sourceRef={getCellSourceRef('proof-cash', 'non_rev_deposits', row.month)}
+                            cellId={getCellId('proof-cash', 'non_rev_deposits', row.month)}
+                            flags={getCellFlags('proof-cash', 'non_rev_deposits', row.month)}
+                            workbookId={isDemoWorkbook ? undefined : id}
+                            onViewSource={handleViewSource}
+                            onSave={fetchCells}
+                            period={row.month}
+                          />
+                        </TableCell>
+                        <TableCell className="text-right font-mono text-sm">
+                          <AuditableCell
+                            value={getDisplayValue('proof-cash', 'revenue_gl', row.month, row.revenueGL)}
+                            source={`Revenue GL — ${row.month}`}
+                            sourceRef={getCellSourceRef('proof-cash', 'revenue_gl', row.month)}
+                            cellId={getCellId('proof-cash', 'revenue_gl', row.month)}
+                            flags={getCellFlags('proof-cash', 'revenue_gl', row.month)}
+                            workbookId={isDemoWorkbook ? undefined : id}
+                            onViewSource={handleViewSource}
+                            onSave={fetchCells}
+                            period={row.month}
+                          />
+                        </TableCell>
                         <TableCell className="text-right font-mono text-sm">
                           <span className={Math.abs(variance) > 50000 ? 'text-red-500' : 'text-green-600'}>
                             {formatCurrency(variance)}

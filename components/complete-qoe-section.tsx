@@ -1384,7 +1384,7 @@ function AppendicesSection({
             {/* Revenue row */}
             <tr className="border-b border-gray-100 font-semibold">
               <td className="py-1.5">Revenue</td>
-              {MONTHLY_DEMO.map((m, mi) => {
+              {MONTHLY_DEMO.map((m) => {
                 const live = getLive(liveCells, 'margins-month', `revenue_${m.month.toLowerCase()}`, 'TTM')
                 const val = live ?? m.revenue
                 return (
@@ -1404,7 +1404,10 @@ function AppendicesSection({
                 )
               })}
               <td className="text-right py-1 px-1 font-bold">
-                {fmtK(MONTHLY_DEMO.reduce((s, m) => s + m.revenue, 0))}
+                {fmtK(MONTHLY_DEMO.reduce((s, m) => {
+                  const live = getLive(liveCells, 'margins-month', `revenue_${m.month.toLowerCase()}`, 'TTM')
+                  return s + (live ?? m.revenue)
+                }, 0))}
               </td>
             </tr>
             {/* COGS row */}
@@ -1430,20 +1433,29 @@ function AppendicesSection({
                 )
               })}
               <td className="text-right py-1 px-1 text-muted-foreground">
-                {fmtK(MONTHLY_DEMO.reduce((s, m) => s + m.cogs, 0))}
+                {fmtK(MONTHLY_DEMO.reduce((s, m) => {
+                  const live = getLive(liveCells, 'margins-month', `cogs_${m.month.toLowerCase()}`, 'TTM')
+                  return s + (live ?? m.cogs)
+                }, 0))}
               </td>
             </tr>
             {/* Gross Profit */}
-            <tr className="border-b border-gray-100 font-semibold">
+            <tr className="border-b border-gray-200 font-semibold bg-slate-50/50">
               <td className="py-1.5">Gross Profit</td>
               {MONTHLY_DEMO.map((m) => {
-                const gp = m.revenue - m.cogs
+                const liveRev = getLive(liveCells, 'margins-month', `revenue_${m.month.toLowerCase()}`, 'TTM')
+                const liveCogs = getLive(liveCells, 'margins-month', `cogs_${m.month.toLowerCase()}`, 'TTM')
+                const gp = (liveRev ?? m.revenue) - (liveCogs ?? m.cogs)
                 return (
                   <td key={m.month} className="text-right py-1 px-1">{fmtK(gp)}</td>
                 )
               })}
               <td className="text-right py-1 px-1">
-                {fmtK(MONTHLY_DEMO.reduce((s, m) => s + m.revenue - m.cogs, 0))}
+                {fmtK(MONTHLY_DEMO.reduce((s, m) => {
+                  const liveRev = getLive(liveCells, 'margins-month', `revenue_${m.month.toLowerCase()}`, 'TTM')
+                  const liveCogs = getLive(liveCells, 'margins-month', `cogs_${m.month.toLowerCase()}`, 'TTM')
+                  return s + (liveRev ?? m.revenue) - (liveCogs ?? m.cogs)
+                }, 0))}
               </td>
             </tr>
             {/* OpEx */}
@@ -1457,10 +1469,12 @@ function AppendicesSection({
               </td>
             </tr>
             {/* EBITDA */}
-            <tr className="font-bold">
-              <td className="py-1.5">EBITDA</td>
+            <tr className="font-bold border-t-2 border-gray-300">
+              <td className="py-2">EBITDA</td>
               {MONTHLY_DEMO.map((m) => {
-                const ebitda = m.revenue - m.cogs - m.opex
+                const liveRev = getLive(liveCells, 'margins-month', `revenue_${m.month.toLowerCase()}`, 'TTM')
+                const liveCogs = getLive(liveCells, 'margins-month', `cogs_${m.month.toLowerCase()}`, 'TTM')
+                const ebitda = (liveRev ?? m.revenue) - (liveCogs ?? m.cogs) - m.opex
                 return (
                   <td key={m.month} className={`text-right py-1 px-1 ${ebitda < 0 ? 'text-red-600' : ''}`}>
                     {fmtK(ebitda)}
@@ -1468,9 +1482,128 @@ function AppendicesSection({
                 )
               })}
               <td className="text-right py-1 px-1">
-                {fmtK(MONTHLY_DEMO.reduce((s, m) => s + m.revenue - m.cogs - m.opex, 0))}
+                {fmtK(MONTHLY_DEMO.reduce((s, m) => {
+                  const liveRev = getLive(liveCells, 'margins-month', `revenue_${m.month.toLowerCase()}`, 'TTM')
+                  const liveCogs = getLive(liveCells, 'margins-month', `cogs_${m.month.toLowerCase()}`, 'TTM')
+                  return s + (liveRev ?? m.revenue) - (liveCogs ?? m.cogs) - m.opex
+                }, 0))}
               </td>
             </tr>
+          </tbody>
+        </table>
+      </div>
+
+      {/* Appendix B — QoE Adjustment Schedule */}
+      <p className="text-sm font-semibold mb-3 mt-8">Appendix B — Quality of Earnings Adjustment Schedule</p>
+      <div className="overflow-x-auto mb-6">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="border-b-2 border-gray-300">
+              <th className="text-left py-2 font-semibold">Adjustment</th>
+              <th className="text-right py-2 font-semibold px-2">FY20</th>
+              <th className="text-right py-2 font-semibold px-2">FY21</th>
+              <th className="text-right py-2 font-semibold px-2">FY22</th>
+              <th className="text-right py-2 font-semibold px-2 bg-slate-50">TTM</th>
+              <th className="text-left py-2 font-semibold px-3 text-muted-foreground">Rationale</th>
+            </tr>
+          </thead>
+          <tbody>
+            {(() => {
+              const rationales = [
+                'Non-recurring charitable donations per tax return',
+                'Owner-related tax advisory and personal legal fees',
+                'Owner compensation above market replacement rate',
+                'Personal charges run through business (per bank statements)',
+                'One-time consulting and advisory fees',
+                'One-time executive search costs',
+                'One-time facility relocation and build-out costs',
+                'Non-recurring employee severance payments',
+                'Lease rate above market; adjustment to market rent',
+                'Normalization of replacement owner compensation',
+              ]
+              return ADJ_ROWS.map((row, i) => {
+                const lFy20 = getLive(liveCells, 'qoe', row.rowKey, 'FY20') ?? row.fy20
+                const lFy21 = getLive(liveCells, 'qoe', row.rowKey, 'FY21') ?? row.fy21
+                const lFy22 = getLive(liveCells, 'qoe', row.rowKey, 'FY22') ?? row.fy22
+                const lTtm  = getLive(liveCells, 'qoe', row.rowKey, 'TTM')  ?? row.ttm
+                return (
+                <tr key={row.rowKey} className={`border-b border-gray-100 ${i % 2 === 0 ? '' : 'bg-slate-50/30'}`}>
+                  <td className="py-1.5 font-medium">{row.label}</td>
+                  <td className={`text-right py-1.5 px-2 ${lFy20 < 0 ? 'text-red-600' : ''}`}>{lFy20 !== 0 ? fmtK(lFy20) : '—'}</td>
+                  <td className={`text-right py-1.5 px-2 ${lFy21 < 0 ? 'text-red-600' : ''}`}>{lFy21 !== 0 ? fmtK(lFy21) : '—'}</td>
+                  <td className={`text-right py-1.5 px-2 ${lFy22 < 0 ? 'text-red-600' : ''}`}>{lFy22 !== 0 ? fmtK(lFy22) : '—'}</td>
+                  <td className={`text-right py-1.5 px-2 bg-slate-50 font-medium ${lTtm < 0 ? 'text-red-600' : ''}`}>{lTtm !== 0 ? fmtK(lTtm) : '—'}</td>
+                  <td className="py-1.5 px-3 text-muted-foreground">{rationales[i] ?? ''}</td>
+                </tr>
+              )
+              })
+            })()}
+            {/* Totals */}
+            <tr className="border-t-2 border-gray-300 font-bold bg-slate-50">
+              <td className="py-2">Total Adjustments</td>
+              {(['FY20', 'FY21', 'FY22', 'TTM'] as const).map((p) => {
+                const total = ADJ_ROWS.reduce((s, row) => {
+                  const key = p.toLowerCase() as 'fy20' | 'fy21' | 'fy22' | 'ttm'
+                  return s + (getLive(liveCells, 'qoe', row.rowKey, p) ?? row[key])
+                }, 0)
+                return (
+                  <td key={p} className={`text-right py-2 px-2 ${p === 'TTM' ? 'bg-slate-100' : ''} ${total < 0 ? 'text-red-600' : ''}`}>
+                    {fmtK(total)}
+                  </td>
+                )
+              })}
+              <td />
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      {/* Appendix C — Three-Way Revenue Proof */}
+      <p className="text-sm font-semibold mb-3 mt-8">Appendix C — Three-Way Revenue Reconciliation</p>
+      <Narrative>
+        Revenue figures cross-referenced across three independent sources — general ledger (GL),
+        federal tax returns, and bank statements — for each period under review. Variances within
+        0.25% are considered immaterial for QoE purposes.
+      </Narrative>
+      <div className="overflow-x-auto mb-6">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="border-b-2 border-gray-300">
+              <th className="text-left py-2 font-semibold">Period</th>
+              <th className="text-right py-2 font-semibold px-3">General Ledger</th>
+              <th className="text-right py-2 font-semibold px-3">Tax Return</th>
+              <th className="text-right py-2 font-semibold px-3">Bank Deposits</th>
+              <th className="text-right py-2 font-semibold px-3">GL vs Tax</th>
+              <th className="text-right py-2 font-semibold px-3">GL vs Bank</th>
+              <th className="text-center py-2 font-semibold px-3">Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {DEMO_PROOF.map((row, i) => {
+              const glVsTax  = ((row.gl - row.tax)  / row.gl * 100)
+              const glVsBank = ((row.gl - row.bank) / row.gl * 100)
+              const pass = Math.abs(glVsTax) < 0.25 && Math.abs(glVsBank) < 0.25
+              return (
+                <tr key={row.period} className={`border-b border-gray-100 ${i % 2 === 0 ? '' : 'bg-slate-50/30'}`}>
+                  <td className="py-1.5 font-semibold">{row.period}</td>
+                  <td className="text-right py-1.5 px-3">{fmt(row.gl)}</td>
+                  <td className="text-right py-1.5 px-3">{fmt(row.tax)}</td>
+                  <td className="text-right py-1.5 px-3">{fmt(row.bank)}</td>
+                  <td className={`text-right py-1.5 px-3 ${Math.abs(glVsTax) >= 0.25 ? 'text-red-600 font-medium' : 'text-muted-foreground'}`}>
+                    {glVsTax > 0 ? '+' : ''}{glVsTax.toFixed(2)}%
+                  </td>
+                  <td className={`text-right py-1.5 px-3 ${Math.abs(glVsBank) >= 0.25 ? 'text-red-600 font-medium' : 'text-muted-foreground'}`}>
+                    {glVsBank > 0 ? '+' : ''}{glVsBank.toFixed(2)}%
+                  </td>
+                  <td className="text-center py-1.5 px-3">
+                    {pass
+                      ? <span className="inline-flex items-center gap-1 text-blue-700 font-medium"><CheckCircle className="h-3 w-3" /> PASS</span>
+                      : <span className="inline-flex items-center gap-1 text-amber-600 font-medium"><AlertTriangle className="h-3 w-3" /> REVIEW</span>
+                    }
+                  </td>
+                </tr>
+              )
+            })}
           </tbody>
         </table>
       </div>
