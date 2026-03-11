@@ -1154,11 +1154,22 @@ export default function WorkbookPage({ params }: { params: Promise<{ id: string 
                 <p className="text-xs text-muted-foreground mb-3">Share of total revenue by product</p>
                 <div className="h-56 flex items-center justify-center">
                   <ResponsiveContainer width="100%" height="100%">
-                    <RechartsPie data={salesChannelData.filter(r => !r.isBold).map(r => ({ name: r.product.split(' ').slice(0,2).join(' '), value: r.revenue }))} cx="50%" cy="50%" innerRadius={55} outerRadius={88}>
-                      {salesChannelData.filter(r => !r.isBold).map((_, i) => (
-                        <Cell key={i} fill={['#2563EB','#7C3AED','#0EA5E9','#10B981','#F59E0B','#EF4444','#64748B','#A78BFA','#34D399','#FCA5A5'][i % 10]} />
-                      ))}
-                      <Tooltip formatter={(v: number | undefined) => formatCurrency(v ?? 0)} />
+                    <RechartsPie>
+                      <Pie
+                        data={salesChannelData.filter(r => !r.isBold).map(r => ({ name: r.product.split(' ').slice(0,2).join(' '), value: r.revenue }))}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={55}
+                        outerRadius={88}
+                        dataKey="value"
+                        paddingAngle={2}
+                      >
+                        {salesChannelData.filter(r => !r.isBold).map((_, i) => (
+                          <Cell key={i} fill={['#2563EB','#7C3AED','#0EA5E9','#10B981','#F59E0B','#EF4444','#64748B','#A78BFA','#34D399','#FCA5A5'][i % 10]} />
+                        ))}
+                      </Pie>
+                      <Tooltip formatter={(v: unknown) => formatCurrency(Number(v))} />
+                      <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 10 }} />
                     </RechartsPie>
                   </ResponsiveContainer>
                 </div>
