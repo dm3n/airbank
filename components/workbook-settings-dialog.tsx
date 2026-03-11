@@ -174,6 +174,7 @@ export function WorkbookSettingsDialog({
     // 1. Upload staged files first
     if (uploadedFiles.length > 0) {
       setUploading(true)
+      const uploadErrors: string[] = []
       for (let i = 0; i < uploadedFiles.length; i++) {
         const file = uploadedFiles[i]
         setUploadStatus(`Uploading ${file.name} (${i + 1}/${uploadedFiles.length})…`)
@@ -189,9 +190,13 @@ export function WorkbookSettingsDialog({
           if (res.ok) {
             const doc = await res.json()
             setDocuments((prev) => [...prev, doc])
+          } else {
+            const body = await res.json().catch(() => ({}))
+            const msg = (body as { error?: string }).error ?? `Upload failed (HTTP ${res.status})`
+            uploadErrors.push(`${file.name}: ${msg}`)
           }
-        } catch {
-          // individual upload failure — continue
+        } catch (err) {
+          uploadErrors.push(`${file.name}: ${err instanceof Error ? err.message : 'Network error'}`)
         }
         setUploadProgress(((i + 1) / uploadedFiles.length) * 100)
       }
@@ -199,6 +204,10 @@ export function WorkbookSettingsDialog({
       setUploadedFiles([])
       setUploadProgress(0)
       setUploadStatus('')
+      if (uploadErrors.length > 0) {
+        setError(uploadErrors.join('\n'))
+        return
+      }
     }
 
     // 2. Run SSE analysis with retry
@@ -341,9 +350,9 @@ export function WorkbookSettingsDialog({
         </DialogHeader>
 
         {error && (
-          <div className="flex items-center gap-2 p-3 rounded-md bg-red-50 border border-red-200 text-sm text-red-700">
-            <AlertCircle className="h-4 w-4 flex-shrink-0" />
-            <span className="flex-1">{error}</span>
+          <div className="flex items-start gap-2 p-3 rounded-md bg-red-50 border border-red-200 text-sm text-red-700">
+            <AlertCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />
+            <span className="flex-1 whitespace-pre-line">{error}</span>
             <button onClick={() => setError(null)} className="ml-auto flex-shrink-0">
               <X className="h-4 w-4" />
             </button>
@@ -354,7 +363,7 @@ export function WorkbookSettingsDialog({
           {/* Integration logos + upload zone */}
           <div className="relative mt-12">
             <div className="absolute -top-8 left-0 right-0 z-10 flex items-center gap-3 px-4">
-              <span className="text-xs text-gray-500 whitespace-nowrap">Get better answers from your apps</span>
+              <span className="text-xs text-gray-500 whitespace-nowrap">Integrate with the tools you already use</span>
               <div className="relative flex-1 max-w-md overflow-hidden">
                 <div className="absolute left-0 top-0 bottom-0 w-8 bg-gradient-to-r from-white to-transparent z-10 pointer-events-none" />
                 <div className="absolute right-0 top-0 bottom-0 w-8 bg-gradient-to-l from-white to-transparent z-10 pointer-events-none" />
@@ -540,14 +549,29 @@ export function WorkbookSettingsDialog({
                         <p className="text-sm text-gray-700 truncate">{doc.file_name}</p>
                         <p className="text-xs text-muted-foreground">
                           {doc.doc_type.replace(/_/g, ' ')} · {formatFileSize(doc.file_size)}
+                          {doc.ingestion_status === 'error' && (
+                            <span className="ml-1 text-red-500">· upload failed</span>
+                          )}
                         </p>
                       </div>
                     </div>
-                    <div className="flex-shrink-0">
+                    <div className="flex items-center gap-1 flex-shrink-0">
                       {doc.ingestion_status === 'ready' ? (
                         <CheckCircle2 className="h-4 w-4 text-blue-500" />
                       ) : doc.ingestion_status === 'error' ? (
-                        <X className="h-4 w-4 text-gray-400" />
+                        <button
+                          title="Remove failed upload"
+                          className="p-1 hover:bg-red-50 rounded-full"
+                          onClick={async () => {
+                            if (!workbookId) return
+                            try {
+                              const res = await fetch(`/api/workbooks/${workbookId}/documents/${doc.id}`, { method: 'DELETE' })
+                              if (res.ok) setDocuments((prev) => prev.filter((d) => d.id !== doc.id))
+                            } catch { /* ignore */ }
+                          }}
+                        >
+                          <Trash2 className="h-4 w-4 text-red-400" />
+                        </button>
                       ) : (
                         <Loader2 className="h-4 w-4 animate-spin text-gray-400" />
                       )}

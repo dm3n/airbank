@@ -1,27 +1,30 @@
 import { NextRequest } from 'next/server'
 import { createSupabaseServerClient, createSupabaseServiceClient } from '@/lib/supabase-server'
-import { createRagCorpus, queryRagCorpus, importRagFile } from '@/lib/vertex-rag'
-import { analyzeSection } from '@/lib/gemini'
+import { createRagCorpus, queryRagCorpusMulti, importRagFile } from '@/lib/vertex-rag'
+import { analyzeSection, applyFormulas, buildReconciliationFlags } from '@/lib/gemini'
 import { SECTION_CONFIGS } from '@/lib/section-prompts'
 import type { SectionConfig } from '@/lib/section-prompts'
-import type { MissingField } from '@/lib/gemini'
-import type { ExtractedFlag } from '@/lib/gemini'
+import type { MissingField, ExtractedFlag } from '@/lib/gemini'
 
 export const dynamic = 'force-dynamic'
 /**
- * 10 minutes — covers first-run corpus creation (60-120 s) + pre-flight imports
- * (up to 90 s) + parallel section analysis (4 batches × ~65 s = 260 s).
- * Subsequent runs skip corpus creation and complete in ~4 min.
+ * 10 minutes — covers:
+ *  - First-run corpus creation (60–120 s)
+ *  - Pre-flight doc imports (up to 120 s)
+ *  - Section analysis: 4 batches × ~90 s = ~360 s
+ *  - Formula post-processing + reconciliation (< 5 s)
  */
 export const maxDuration = 600
 
 /**
- * Process sections in parallel batches so all 13 sections fit well within budget.
- * BATCH_SIZE=4: ceil(13/4) = 4 batches × ~65 s average = ~260 s for analysis.
- * Per-section budget: 85 s (30 s RAG + 50 s Gemini + 5 s margin).
+ * Run 4 sections in parallel per batch.
+ * Each section budget: 120 s (multi-query RAG ≤ 30 s parallel + Gemini batches ≤ 80 s).
  */
 const BATCH_SIZE = 4
-const SECTION_TIMEOUT_MS = 85_000
+const SECTION_TIMEOUT_MS = 120_000
+
+// ── Low-confidence threshold ───────────────────────────────────────────────────
+const LOW_CONFIDENCE_THRESHOLD = 0.65
 
 function sseEvent(data: unknown): string {
   return `data: ${JSON.stringify(data)}\n\n`
@@ -50,7 +53,7 @@ export async function GET(
 
   if (!workbook) return new Response('Workbook not found', { status: 404 })
 
-  const periods: string[] = workbook.periods ?? ['FY20', 'FY21', 'FY22', 'TTM']
+  const workbookPeriods: string[] = workbook.periods ?? ['FY20', 'FY21', 'FY22', 'TTM']
 
   const stream = new ReadableStream({
     async start(controller) {
@@ -66,18 +69,30 @@ export async function GET(
 
       // Keepalive every 15 s to prevent proxy/browser SSE timeout
       const keepalive = setInterval(() => {
-        try {
-          controller.enqueue(encoder.encode(': keepalive\n\n'))
-        } catch {
-          clearInterval(keepalive)
-        }
+        try { controller.enqueue(encoder.encode(': keepalive\n\n')) }
+        catch { clearInterval(keepalive) }
       }, 15_000)
 
       try {
+        // ── Step 0: Gate — require at least one uploaded document ─────────────
+        const { data: readyDocs, count: readyCount } = await serviceClient
+          .from('documents')
+          .select('id', { count: 'exact', head: true })
+          .eq('workbook_id', workbookId)
+          .in('ingestion_status', ['ready', 'ingesting'])
+
+        if (!readyCount || readyCount === 0) {
+          emit({
+            type: 'error',
+            error: 'No documents uploaded. Please upload at least one financial document (e.g. P&L, general ledger, or bank statements) before running analysis.',
+          })
+          await serviceClient.from('workbooks').update({ status: 'needs_input' }).eq('id', workbookId)
+          clearInterval(keepalive)
+          controller.close()
+          return
+        }
+
         // ── Step 1: Ensure RAG corpus exists ──────────────────────────────────
-        // If corpus doesn't exist yet (background task hasn't completed or failed),
-        // create it inline here so the user always gets real-time progress and
-        // errors are surfaced immediately via SSE instead of a silent workbook failure.
         let { data: corpus } = await serviceClient
           .from('rag_corpora')
           .select('corpus_name')
@@ -116,26 +131,31 @@ export async function GET(
 
         const corpusName = corpus.corpus_name
 
-        // ── Step 2: Pre-flight — import docs with gcs_uri but no rag_file_id ──
-        // Catches files uploaded while corpus was being created, or whose
-        // background RAG import failed. 90 s hard cap so this never starves sections.
+        // ── Step 2: Pre-flight — import any docs not yet in RAG ───────────────
+        // Catches docs that:
+        //  (a) uploaded while corpus was being created (no rag_file_id, status='ready')
+        //  (b) got stuck mid-import — gcs_uri set but status='ingesting', rag_file_id null
         {
           const { data: unimported } = await serviceClient
             .from('documents')
             .select('id, gcs_uri, file_name')
             .eq('workbook_id', workbookId)
-            .eq('ingestion_status', 'ready')
+            .in('ingestion_status', ['ready', 'ingesting'])
             .is('rag_file_id', null)
             .not('gcs_uri', 'is', null)
 
           if (unimported && unimported.length > 0) {
-            emit({ type: 'status', message: `Importing ${unimported.length} document(s) into RAG corpus…` })
+            emit({
+              type: 'status',
+              message: `Importing ${unimported.length} document(s) into AI workspace…`,
+            })
 
             const preflightAc = new AbortController()
+            // 120 s hard cap — large PDFs can take up to 90 s each
             const preflightTimer = setTimeout(() => {
-              console.warn('Pre-flight RAG import budget exhausted (90 s) — proceeding to analysis')
+              console.warn('Pre-flight RAG import budget exhausted (120 s) — proceeding to analysis')
               preflightAc.abort()
-            }, 90_000)
+            }, 120_000)
 
             try {
               for (const doc of unimported) {
@@ -148,13 +168,19 @@ export async function GET(
                   )
                   await serviceClient
                     .from('documents')
-                    .update({ rag_file_id: ragFileId })
+                    .update({ rag_file_id: ragFileId, ingestion_status: 'ready' })
                     .eq('id', doc.id)
+                  emit({ type: 'status', message: `Imported: ${doc.file_name}` })
                 } catch (err) {
                   if (!preflightAc.signal.aborted) {
                     console.error(`Pre-flight RAG import failed for ${doc.file_name}:`, err)
+                    // Mark error so it doesn't keep retrying silently
+                    await serviceClient
+                      .from('documents')
+                      .update({ ingestion_status: 'error' })
+                      .eq('id', doc.id)
+                      .is('rag_file_id', null) // only if still unimported
                   }
-                  // Continue — analysis still works with other docs
                 }
               }
             } finally {
@@ -163,19 +189,41 @@ export async function GET(
           }
         }
 
-        // Fetch document list once (for source_document_id lookup when persisting cells)
+        // Fetch doc list for source_document_id lookup — try exact name and lowercase match
         const { data: docs } = await serviceClient
           .from('documents')
           .select('id, file_name')
           .eq('workbook_id', workbookId)
-        const docByName = new Map(docs?.map((d) => [d.file_name, d.id]) ?? [])
+
+        // Build both exact and lowercase maps for fuzzy filename matching
+        const docByNameExact = new Map((docs ?? []).map(d => [d.file_name, d.id]))
+        const docByNameLower = new Map((docs ?? []).map(d => [d.file_name.toLowerCase(), d.id]))
+
+        function resolveDocId(filename: string): string | null {
+          if (!filename) return null
+          // Try exact match first, then case-insensitive, then basename only
+          return (
+            docByNameExact.get(filename) ??
+            docByNameLower.get(filename.toLowerCase()) ??
+            docByNameLower.get(filename.split('/').pop()?.toLowerCase() ?? '') ??
+            null
+          )
+        }
+
+        // Accumulate all extracted cells for cross-section reconciliation
+        const allExtractedCells: Array<{
+          section: string; row_key: string; period: string; raw_value: number | null
+        }> = []
 
         /**
-         * Run one section: resume check → RAG → Gemini → DB upsert.
+         * Run one section: resume check → multi-query RAG → Gemini → formulas → DB upsert.
+         * Uses the section's overridePeriods if set (e.g. months for margins-by-month).
          * Returns missing fields for final roll-up. Never throws.
          */
-        const runSection = async (section: SectionConfig): Promise<{ missing: MissingField[]; flags: ExtractedFlag[] }> => {
-          // Resume: skip sections already populated from a prior interrupted run
+        const runSection = async (
+          section: SectionConfig,
+        ): Promise<{ missing: MissingField[]; flags: ExtractedFlag[] }> => {
+          // Resume: skip sections already fully populated from a prior interrupted run
           const { count: existingCount } = await serviceClient
             .from('workbook_cells')
             .select('id', { count: 'exact', head: true })
@@ -196,46 +244,60 @@ export async function GET(
 
           emit({ type: 'section_start', section: section.key, displayName: section.displayName })
 
+          // Use overridePeriods if defined (e.g. month names for margins-by-month)
+          const sectionPeriods = section.overridePeriods ?? workbookPeriods
+
           const sectionAc = new AbortController()
           const sectionTimer = setTimeout(() => sectionAc.abort(), SECTION_TIMEOUT_MS)
 
           try {
-            // RAG retrieval
+            // ── Multi-query RAG retrieval ────────────────────────────────────
+            // Use ragQueries (multiple targeted queries) for higher recall.
+            // Falls back to single ragQuery if ragQueries not defined.
+            const queries = section.ragQueries?.length
+              ? section.ragQueries
+              : [section.ragQuery]
+
             let ragChunks
             try {
-              ragChunks = await queryRagCorpus(
+              ragChunks = await queryRagCorpusMulti(
                 corpusName,
-                section.ragQuery,
-                25,
+                queries,
+                20,          // topK per query
                 sectionAc.signal,
+                60,          // max total chunks after dedup
               )
             } catch (err) {
               emit({
                 type: 'section_error',
                 section: section.key,
                 displayName: section.displayName,
-                error: String(err),
+                error: `RAG retrieval failed: ${String(err)}`,
               })
               return { missing: [], flags: [] }
             }
 
-            // Gemini extraction
+            // ── Gemini extraction (with automatic row batching) ──────────────
             let result
             try {
-              result = await analyzeSection(ragChunks, section, periods, sectionAc.signal)
+              result = await analyzeSection(ragChunks, section, sectionPeriods, sectionAc.signal)
             } catch (err) {
               emit({
                 type: 'section_error',
                 section: section.key,
                 displayName: section.displayName,
-                error: String(err),
+                error: `AI extraction failed: ${String(err)}`,
               })
               return { missing: [], flags: [] }
             }
 
-            // Persist cells
+            // ── Formula post-processing ──────────────────────────────────────
+            // Fills in calculated rows that Gemini couldn't derive (e.g., missing subtotals).
+            result.cells = applyFormulas(result.cells, section.requiredRows, sectionPeriods)
+
+            // ── Persist cells ────────────────────────────────────────────────
             if (result.cells.length > 0) {
-              const cellRows = result.cells.map((cell) => ({
+              const cellRows = result.cells.map(cell => ({
                 workbook_id: workbookId,
                 section: section.key,
                 row_key: cell.row_key,
@@ -243,9 +305,7 @@ export async function GET(
                 raw_value: cell.raw_value,
                 display_value: cell.display_value,
                 is_calculated: cell.is_calculated,
-                source_document_id: cell.source_filename
-                  ? (docByName.get(cell.source_filename) ?? null)
-                  : null,
+                source_document_id: resolveDocId(cell.source_filename),
                 source_page: cell.source_page,
                 source_excerpt: cell.source_excerpt,
                 confidence: cell.confidence,
@@ -255,10 +315,27 @@ export async function GET(
               await serviceClient
                 .from('workbook_cells')
                 .upsert(cellRows, { onConflict: 'workbook_id,section,row_key,period' })
+
+              // Accumulate for cross-section reconciliation
+              for (const c of result.cells) {
+                allExtractedCells.push({
+                  section: section.key,
+                  row_key: c.row_key,
+                  period: c.period,
+                  raw_value: c.raw_value,
+                })
+              }
             }
 
-            // Persist missing-data requests
-            if (result.missing.length > 0) {
+            // ── Persist missing-data requests ────────────────────────────────
+            // Remove any row that was actually filled in (formula may have resolved it)
+            const extractedKeys = new Set(result.cells.map(c => `${c.row_key}:${c.period}`))
+            const genuinelyMissing = result.missing.filter(
+              m => !extractedKeys.has(`${m.row_key}:${m.period}`)
+            )
+
+            if (genuinelyMissing.length > 0) {
+              // Clear old open requests for this section before inserting new ones
               await serviceClient
                 .from('missing_data_requests')
                 .delete()
@@ -266,7 +343,7 @@ export async function GET(
                 .eq('section', section.key)
                 .eq('status', 'open')
 
-              const missingRows = result.missing.map((m) => ({
+              const missingRows = genuinelyMissing.map(m => ({
                 workbook_id: workbookId,
                 section: section.key,
                 field_key: m.row_key,
@@ -281,30 +358,32 @@ export async function GET(
               emit({
                 type: 'section_missing',
                 section: section.key,
-                missing: result.missing,
+                missing: genuinelyMissing,
               })
             }
 
-            // Persist AI flags (merge AI prompt flags + auto low-confidence flags)
+            // ── Persist flags ────────────────────────────────────────────────
             const flagsToInsert = [...result.flags]
 
-            // Auto-add low-confidence flags for cells with confidence < 0.65 not already flagged
+            // Auto-add low-confidence flags for cells not already flagged
             const flaggedKeys = new Set(result.flags.map(f => `${f.row_key}:${f.period}`))
             for (const cell of result.cells) {
-              if (cell.confidence < 0.65 && !flaggedKeys.has(`${cell.row_key}:${cell.period}`)) {
+              if (
+                cell.confidence < LOW_CONFIDENCE_THRESHOLD &&
+                !flaggedKeys.has(`${cell.row_key}:${cell.period}`)
+              ) {
                 flagsToInsert.push({
                   row_key: cell.row_key,
                   period: cell.period,
                   flag_type: 'low_confidence',
                   severity: 'warning',
-                  title: `Low confidence — ${cell.row_key} ${cell.period}`,
-                  body: `Confidence score: ${Math.round(cell.confidence * 100)}%. Value may need manual verification.`,
+                  title: `Low confidence — ${cell.row_key} (${cell.period})`,
+                  body: `Confidence: ${Math.round(cell.confidence * 100)}%. Manual verification recommended.`,
                 })
               }
             }
 
             if (flagsToInsert.length > 0) {
-              // Look up cell_ids by (workbook_id, section, row_key, period)
               const { data: savedCells } = await serviceClient
                 .from('workbook_cells')
                 .select('id, row_key, period')
@@ -355,17 +434,18 @@ export async function GET(
               section: section.key,
               displayName: section.displayName,
               cells_extracted: result.cells.length,
-              missing_count: result.missing.length,
+              missing_count: genuinelyMissing.length,
+              chunks_used: ragChunks.length,
             })
 
-            return { missing: result.missing, flags: flagsToInsert }
+            return { missing: genuinelyMissing, flags: flagsToInsert }
 
           } finally {
             clearTimeout(sectionTimer)
           }
         }
 
-        // ── Step 3: Process sections in parallel batches ──────────────────────
+        // ── Step 3: Process sections in parallel batches ───────────────────
         const allMissing: MissingField[] = []
 
         for (let i = 0; i < SECTION_CONFIGS.length; i += BATCH_SIZE) {
@@ -378,7 +458,67 @@ export async function GET(
           }
         }
 
-        // ── Final workbook status ─────────────────────────────────────────────
+        // ── Step 4: Cross-section reconciliation ───────────────────────────
+        // Compare key metrics (revenue, net income, COGS, etc.) across sections
+        // and insert discrepancy flags for any values that don't align.
+        emit({ type: 'status', message: 'Running cross-section reconciliation…' })
+        try {
+          const reconFlags = buildReconciliationFlags(allExtractedCells, workbookPeriods)
+
+          if (reconFlags.length > 0) {
+            // Look up cell IDs for reconciliation flag attachment
+            const { data: allSavedCells } = await serviceClient
+              .from('workbook_cells')
+              .select('id, section, row_key, period')
+              .eq('workbook_id', workbookId)
+
+            const cellIdMap = new Map(
+              (allSavedCells ?? []).map(c => [`${c.section}:${c.row_key}:${c.period}`, c.id])
+            )
+
+            const reconFlagRows = reconFlags.map(f => ({
+              workbook_id: workbookId,
+              cell_id: cellIdMap.get(`overview:${f.row_key}:${f.period}`) ?? null,
+              section: 'overview',
+              row_key: f.row_key,
+              period: f.period,
+              flag_type: f.flag_type,
+              severity: f.severity,
+              title: f.title,
+              body: f.body,
+              created_by_ai: true,
+            }))
+
+            const { data: insertedReconFlags } = await serviceClient
+              .from('cell_flags')
+              .insert(reconFlagRows)
+              .select('id, body')
+
+            if (insertedReconFlags && insertedReconFlags.length > 0) {
+              const commentRows = insertedReconFlags
+                .filter(f => f.body)
+                .map(f => ({
+                  flag_id: f.id,
+                  workbook_id: workbookId,
+                  author_id: null,
+                  author_name: 'AI',
+                  body: f.body,
+                }))
+              if (commentRows.length > 0) {
+                await serviceClient.from('flag_comments').insert(commentRows)
+              }
+            }
+
+            emit({
+              type: 'status',
+              message: `Found ${reconFlags.length} cross-section discrepancy flag(s).`,
+            })
+          }
+        } catch (reconErr) {
+          console.error('Reconciliation step failed (non-fatal):', reconErr)
+        }
+
+        // ── Final workbook status ──────────────────────────────────────────
         const finalStatus = allMissing.length > 0 ? 'needs_input' : 'ready'
         await serviceClient
           .from('workbooks')

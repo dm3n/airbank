@@ -25,11 +25,7 @@ function displayStatus(status: string): 'complete' | 'pending' | 'attention' {
 }
 
 const FALLBACK_WORKBOOKS: Workbook[] = [
-  { id: '1', company_name: 'Acme Corp', status: 'ready' },
-  { id: '2', company_name: 'TechStart Inc', status: 'uploading' },
-  { id: '3', company_name: 'Global Industries', status: 'needs_input' },
-  { id: '4', company_name: 'Finance Group', status: 'ready' },
-  { id: '5', company_name: 'Retail Solutions', status: 'uploading' },
+  { id: 'sandbox', company_name: 'Sandbox — Alpine Outdoor Co.', status: 'ready' },
 ]
 
 function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
@@ -50,7 +46,9 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
       const res = await fetch('/api/workbooks')
       if (!res.ok) { setWorkbooks(FALLBACK_WORKBOOKS); return }
       const data: Workbook[] = await res.json()
-      setWorkbooks(Array.isArray(data) ? data : [])
+      const real = Array.isArray(data) ? data : []
+      // Always show sandbox first, then any real workbooks
+      setWorkbooks([FALLBACK_WORKBOOKS[0], ...real])
     } catch {
       setWorkbooks(FALLBACK_WORKBOOKS)
     }
@@ -67,12 +65,15 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
     })
   }, [fetchWorkbooks])
 
-  useEffect(() => { fetchWorkbooks() }, [pathname, fetchWorkbooks])
+  // Only re-fetch when navigating away from a workbook (e.g. after creation)
+  useEffect(() => {
+    if (pathname === '/dashboard') fetchWorkbooks()
+  }, [pathname, fetchWorkbooks])
 
   useEffect(() => {
     const hasActive = workbooks?.some(w => w.status === 'analyzing' || w.status === 'uploading')
     if (!hasActive) return
-    const id = setInterval(fetchWorkbooks, 15_000)
+    const id = setInterval(fetchWorkbooks, 30_000)
     return () => clearInterval(id)
   }, [workbooks, fetchWorkbooks])
 
@@ -202,7 +203,7 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
                 </div>
               ) : (
                 workbooks.map(workbook => (
-                  <Link key={workbook.id} href={`/dashboard/workbook/${workbook.id}`}>
+                  <Link key={workbook.id} href={`/dashboard/workbook/${workbook.id}`} prefetch={true}>
                     <div className={`flex items-center justify-between px-3 py-2 rounded-md cursor-pointer hover:bg-accent ${pathname === `/dashboard/workbook/${workbook.id}` ? 'bg-accent' : ''}`}>
                       <div className="flex items-center min-w-0">
                         <FileText className="mr-2 h-4 w-4 flex-shrink-0" />

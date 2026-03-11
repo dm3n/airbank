@@ -19,7 +19,7 @@ function StatusBadge({ status }: { status: string }) {
     return (
       <span className="inline-flex items-center gap-1.5 text-xs font-medium text-blue-600">
         <CheckCircle2 className="h-3.5 w-3.5" />
-        Completed
+        Complete
       </span>
     )
   }
@@ -43,6 +43,15 @@ function relativeTime(iso: string): string {
   return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 }
 
+const SANDBOX: Workbook = {
+  id: 'sandbox',
+  company_name: 'Sandbox — Alpine Outdoor Co.',
+  status: 'ready',
+  periods: ['FY20', 'FY21', 'FY22', 'TTM'],
+  created_at: '2024-01-01T00:00:00Z',
+  updated_at: new Date().toISOString(),
+}
+
 export default function DashboardOverview() {
   const [workbooks, setWorkbooks] = useState<Workbook[] | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -55,8 +64,8 @@ export default function DashboardOverview() {
         if (!res.ok) throw new Error(`${res.status}`)
         return res.json()
       })
-      .then((data) => setWorkbooks(Array.isArray(data) ? data : []))
-      .catch((e) => setError(e.message))
+      .then((data) => setWorkbooks([SANDBOX, ...(Array.isArray(data) ? data : [])]))
+      .catch((e) => { setWorkbooks([SANDBOX]); setError(e.message) })
   }, [])
 
   return (

@@ -269,3 +269,45 @@ async function pollOperation(
 function sleep(ms: number) {
   return new Promise<void>((r) => setTimeout(r, ms))
 }
+
+/**
+ * Run multiple RAG queries in parallel and return deduplicated, ranked chunks.
+ *
+ * Strategy:
+ *  1. All queries fire simultaneously (max parallelism).
+ *  2. Duplicate chunks (same first 150 chars) are collapsed — keep highest score.
+ *  3. Result is sorted by score descending, capped at maxTotal.
+ *
+ * This dramatically improves recall for sections whose data spans multiple
+ * table types (e.g., Income Statement needs revenue, COGS, OpEx, and tax queries).
+ */
+export async function queryRagCorpusMulti(
+  corpusName: string,
+  queries: string[],
+  topKPerQuery = 20,
+  signal?: AbortSignal,
+  maxTotal = 60,
+): Promise<RagChunk[]> {
+  if (queries.length === 0) return []
+
+  const results = await Promise.allSettled(
+    queries.map(q => queryRagCorpus(corpusName, q, topKPerQuery, signal))
+  )
+
+  // Deduplicate by content fingerprint (first 150 chars), keep highest score
+  const seen = new Map<string, RagChunk>()
+  for (const result of results) {
+    if (result.status !== 'fulfilled') continue
+    for (const chunk of result.value) {
+      const fingerprint = chunk.text.slice(0, 150).trim()
+      const existing = seen.get(fingerprint)
+      if (!existing || chunk.score > existing.score) {
+        seen.set(fingerprint, chunk)
+      }
+    }
+  }
+
+  return [...seen.values()]
+    .sort((a, b) => b.score - a.score)
+    .slice(0, maxTotal)
+}

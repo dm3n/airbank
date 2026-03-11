@@ -12,6 +12,7 @@ import {
   Cell,
   LabelList,
 } from 'recharts'
+import { memo } from 'react'
 import { TrendingUp, AlertTriangle, CheckCircle } from 'lucide-react'
 import { AuditableCell, type SourceRef } from '@/components/auditable-cell'
 
@@ -1101,7 +1102,7 @@ function RunRateSection({
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
-export function RiskDiligenceSection({
+export const RiskDiligenceSection = memo(function RiskDiligenceSection({
   liveCells,
   workbookId,
   isDemoWorkbook,
@@ -1124,4 +1125,4 @@ export function RiskDiligenceSection({
       <RunRateSection {...sharedProps} />
     </div>
   )
-}
+})

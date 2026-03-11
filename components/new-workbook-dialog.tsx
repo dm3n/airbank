@@ -452,7 +452,7 @@ export function NewWorkbookDialog({ open, onOpenChange, onWorkbookCreated }: New
 
             <div className="relative mt-16">
               <div className="absolute -top-8 left-0 right-0 z-10 flex items-center gap-3 px-4">
-                <span className="text-xs text-gray-500 whitespace-nowrap">Get better answers from your apps</span>
+                <span className="text-xs text-gray-500 whitespace-nowrap">Integrate with the tools you already use</span>
                 <div className="relative flex-1 max-w-md overflow-hidden">
                   <div className="absolute left-0 top-0 bottom-0 w-8 bg-gradient-to-r from-white to-transparent z-10 pointer-events-none" />
                   <div className="absolute right-0 top-0 bottom-0 w-8 bg-gradient-to-l from-white to-transparent z-10 pointer-events-none" />

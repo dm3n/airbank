@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, memo } from 'react'
 import {
   BarChart,
   Bar,
@@ -1486,7 +1486,7 @@ function AppendicesSection({
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
-export function CompleteQoeSection({
+export const CompleteQoeSection = memo(function CompleteQoeSection({
   liveCells,
   workbookId,
   isDemoWorkbook,
@@ -1590,4 +1590,4 @@ export function CompleteQoeSection({
       </div>
     </div>
   )
-}
+})

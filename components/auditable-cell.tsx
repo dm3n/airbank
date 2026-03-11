@@ -206,9 +206,7 @@ export function AuditableCell({
           {displayedValue}
           {sourceRef && <ConfidenceDot confidence={sourceRef.confidence} />}
           {hasFlags && (
-            <Flag
-              className={`inline-block ml-1 h-3 w-3 ${unresolvedFlags.some(f => f.created_by_ai) ? 'text-blue-500' : 'text-gray-400'}`}
-            />
+            <Flag className="inline-block ml-1 h-3 w-3 text-red-500" />
           )}
         </span>
       </PopoverTrigger>

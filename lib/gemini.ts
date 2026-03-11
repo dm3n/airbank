@@ -10,7 +10,7 @@
  */
 
 import type { RagChunk } from './vertex-rag'
-import type { SectionConfig } from './section-prompts'
+import type { SectionConfig, RowDef } from './section-prompts'
 
 export interface ExtractedCell {
   row_key: string
@@ -64,7 +64,7 @@ const PROJECT  = () => {
 }
 const MODEL = 'gemini-2.0-flash-001'
 
-// ── System instruction (loaded once, reused across all calls) ─────────────────
+// ── System instruction ────────────────────────────────────────────────────────
 
 const SYSTEM_INSTRUCTION = `\
 You are a senior financial diligence analyst at a Big-4 accounting firm.
@@ -114,7 +114,7 @@ STEP 4 — CONFIDENCE CALIBRATION
 STEP 5 — SOURCE EXCERPT (mandatory for every cell)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Copy the EXACT sentence or table row from the document containing the value.
-Maximum 300 characters. This enables human reviewers to verify every number.
+Keep it under 100 characters. This enables human reviewers to verify numbers.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 DO NOT mark a field as MISSING if:
@@ -140,7 +140,7 @@ async function callGemini(
   attempt = 0,
 ): Promise<string> {
   const MAX_ATTEMPTS = 3
-  const CALL_TIMEOUT_MS = 55_000  // 55 s — leaves headroom within a 60 s section budget
+  const CALL_TIMEOUT_MS = 55_000
 
   if (signal?.aborted) throw new Error('Aborted before Gemini call')
 
@@ -148,7 +148,6 @@ async function callGemini(
   const url =
     `https://${LOCATION()}-aiplatform.googleapis.com/v1/projects/${PROJECT()}/locations/${LOCATION()}/publishers/google/models/${MODEL}:generateContent`
 
-  // Combine caller abort + our per-call timeout into one signal
   const callAc = new AbortController()
   const timer = setTimeout(() => callAc.abort(), CALL_TIMEOUT_MS)
   const onParentAbort = () => callAc.abort()
@@ -165,7 +164,7 @@ async function callGemini(
         systemInstruction: { parts: [{ text: SYSTEM_INSTRUCTION }] },
         contents: [{ role: 'user', parts: [{ text: prompt }] }],
         generationConfig: {
-          temperature: 0,       // fully deterministic
+          temperature: 0,
           maxOutputTokens: 8192,
           responseMimeType: 'application/json',
         },
@@ -187,7 +186,6 @@ async function callGemini(
     clearTimeout(timer)
     signal?.removeEventListener('abort', onParentAbort)
 
-    // Caller cancelled — propagate immediately, no retry
     if (signal?.aborted) throw err
 
     if (attempt < MAX_ATTEMPTS - 1) {
@@ -203,7 +201,200 @@ async function callGemini(
   }
 }
 
-// ── Main extraction function ──────────────────────────────────────────────────
+// ── Shared context builder ────────────────────────────────────────────────────
+
+function buildContext(ragChunks: RagChunk[]): { contextText: string; docCount: number } {
+  const chunksByDoc = new Map<string, RagChunk[]>()
+  for (const chunk of ragChunks) {
+    const name = chunk.documentName || chunk.sourceUri?.split('/').pop() || 'Unknown document'
+    if (!chunksByDoc.has(name)) chunksByDoc.set(name, [])
+    chunksByDoc.get(name)!.push(chunk)
+  }
+
+  const contextText = [...chunksByDoc.entries()]
+    .map(([docName, chunks]) => {
+      const body = chunks
+        .map((c, i) =>
+          `  [Chunk ${i + 1} | Page ${c.pageNumber ?? '?'} | Relevance ${c.score.toFixed(2)}]\n  ${c.text}`)
+        .join('\n\n')
+      return `╔══ Document: ${docName} ══╗\n${body}`
+    })
+    .join('\n\n')
+
+  return { contextText, docCount: chunksByDoc.size }
+}
+
+// ── JSON coercion helpers ─────────────────────────────────────────────────────
+
+const MONTH_NAMES = new Set(['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'])
+const VALID_FLAG_TYPES = new Set(['low_confidence', 'discrepancy', 'needs_review', 'ai_note'])
+const VALID_SEVERITIES = new Set(['info', 'warning', 'critical'])
+
+function coerceCells(raw: unknown[], validPeriods: Set<string>): ExtractedCell[] {
+  return (raw ?? [])
+    .filter(Boolean)
+    .map((c: unknown) => {
+      const cell = c as Record<string, unknown>
+      return {
+        row_key: String(cell.row_key ?? ''),
+        period: String(cell.period ?? ''),
+        raw_value: typeof cell.raw_value === 'number' && isFinite(cell.raw_value as number)
+          ? Math.round((cell.raw_value as number) * 100) / 100
+          : null,
+        display_value: String(cell.display_value ?? ''),
+        source_page: typeof cell.source_page === 'number' ? Math.floor(cell.source_page as number) : null,
+        source_excerpt: String(cell.source_excerpt ?? '').slice(0, 200),
+        source_filename: String(cell.source_filename ?? ''),
+        confidence: Math.min(1, Math.max(0, Number(cell.confidence ?? 0.5))),
+        is_calculated: Boolean(cell.is_calculated),
+      }
+    })
+    .filter(c => c.row_key && c.period && validPeriods.has(c.period))
+}
+
+function coerceMissing(raw: unknown[], validPeriods: Set<string>): MissingField[] {
+  return (raw ?? [])
+    .filter(Boolean)
+    .map((m: unknown) => {
+      const miss = m as Record<string, unknown>
+      return {
+        row_key: String(miss.row_key ?? ''),
+        period: String(miss.period ?? ''),
+        reason: String(miss.reason ?? ''),
+        suggested_doc: String(miss.suggested_doc ?? ''),
+      }
+    })
+    .filter(m => m.row_key && m.period && validPeriods.has(m.period))
+}
+
+function coerceFlags(raw: unknown[], validPeriods: Set<string>): ExtractedFlag[] {
+  return (raw ?? [])
+    .filter(Boolean)
+    .map((f: unknown) => {
+      const flag = f as Record<string, unknown>
+      return {
+        row_key: String(flag.row_key ?? ''),
+        period: String(flag.period ?? ''),
+        flag_type: VALID_FLAG_TYPES.has(flag.flag_type as string)
+          ? (flag.flag_type as ExtractedFlag['flag_type'])
+          : 'needs_review',
+        severity: VALID_SEVERITIES.has(flag.severity as string)
+          ? (flag.severity as ExtractedFlag['severity'])
+          : 'warning',
+        title: String(flag.title ?? '').slice(0, 200),
+        body: String(flag.body ?? '').slice(0, 1000),
+      }
+    })
+    .filter(f => f.row_key && f.period && f.title && validPeriods.has(f.period))
+}
+
+// ── Single batch extraction call ──────────────────────────────────────────────
+
+async function extractBatch(
+  contextText: string,
+  docCount: number,
+  chunkCount: number,
+  sectionName: string,
+  rows: RowDef[],
+  periods: string[],
+  validPeriods: Set<string>,
+  signal?: AbortSignal,
+): Promise<{ cells: ExtractedCell[]; missing: MissingField[]; flags: ExtractedFlag[] }> {
+
+  const requiredRowsJson = JSON.stringify(
+    rows.map(r => ({
+      row_key: r.rowKey,
+      label: r.label,
+      value_type: r.valueType,
+      is_calculated: r.isCalculated,
+    })),
+    null, 2
+  )
+
+  const prompt = `\
+## Extract: "${sectionName}" section
+
+## Required periods: ${periods.join(', ')}
+
+## Required rows — extract every row_key × period combination:
+${requiredRowsJson}
+
+## Source documents (${chunkCount} chunks across ${docCount} file(s)):
+${contextText}
+
+## Extraction checklist:
+1. Detect unit scale (thousands / millions / raw) from each document BEFORE reading values.
+2. Apply parenthetical-negative rule: (x) → negative.
+3. Map document period labels to the required period keys (${periods.join(' / ')}).
+4. Search ALL chunks before marking anything as missing.
+5. For value_type "percent": output as a decimal percentage (e.g., 12.5 means 12.5%, not 0.125).
+6. For value_type "currency": output raw integer dollars after unit-scale conversion.
+7. Calculated rows (is_calculated: true) → extract stated total if present, else compute from components.
+8. For rank-ordered generic row keys (vendor_1…N, product_line_1…N, customer_1…N):
+   set display_value to "ActualName: $X,XXX,XXX" — include the real name from the document.
+9. Keep source_excerpt under 100 characters.
+10. In the "flags" array, include an entry for:
+    - Confidence < 0.65 → flag_type: "low_confidence", severity: "warning"
+    - Period-over-period variance >50% unexplained → flag_type: "discrepancy", severity: "warning"
+    - Calculated row does not reconcile with stated total → flag_type: "discrepancy", severity: "critical"
+    - One-time or non-recurring item detected → flag_type: "ai_note", severity: "info"
+
+## Output — strict JSON only, no markdown, no code fences:
+{
+  "cells": [
+    {
+      "row_key": "net_income",
+      "period": "FY22",
+      "raw_value": 7120305,
+      "display_value": "$7,120,305",
+      "source_page": 4,
+      "source_excerpt": "Net income FY2022: $7,120,305",
+      "source_filename": "audited_financials_2022.pdf",
+      "confidence": 0.97,
+      "is_calculated": false
+    }
+  ],
+  "missing": [
+    {
+      "row_key": "bank_deposits",
+      "period": "FY21",
+      "reason": "2021 bank statements not in uploaded documents",
+      "suggested_doc": "Bank Statements 2021"
+    }
+  ],
+  "flags": []
+}`
+
+  const rawText = await callGemini(prompt, signal)
+  const cleaned = rawText
+    .replace(/^```(?:json)?\s*/im, '')
+    .replace(/\s*```\s*$/im, '')
+    .trim()
+
+  let parsed: { cells: unknown[]; missing: unknown[]; flags: unknown[] }
+  try {
+    parsed = JSON.parse(cleaned)
+  } catch {
+    const preview = cleaned.slice(0, 400)
+    console.error(`[gemini] JSON parse error — section "${sectionName}":`, preview)
+    throw new Error(`Gemini returned unparseable JSON for "${sectionName}": ${preview}`)
+  }
+
+  return {
+    cells: coerceCells(parsed.cells ?? [], validPeriods),
+    missing: coerceMissing(parsed.missing ?? [], validPeriods),
+    flags: coerceFlags(parsed.flags ?? [], validPeriods),
+  }
+}
+
+// ── Main extraction function (with row batching for large sections) ────────────
+
+/**
+ * Sections with many rows (e.g., Income Statement: 29 rows × 4 periods = 116 cells)
+ * can exceed Gemini's 8192-token output limit. We split into batches of ROW_BATCH_SIZE
+ * rows, run them in parallel (same RAG context), then merge.
+ */
+const ROW_BATCH_SIZE = 12
 
 export async function analyzeSection(
   ragChunks: RagChunk[],
@@ -224,163 +415,257 @@ export async function analyzeSection(
     return { cells: [], missing, flags: [] }
   }
 
-  // Group chunks by source document so the model sees clear provenance
-  const chunksByDoc = new Map<string, RagChunk[]>()
-  for (const chunk of ragChunks) {
-    const name = chunk.documentName || chunk.sourceUri?.split('/').pop() || 'Unknown document'
-    if (!chunksByDoc.has(name)) chunksByDoc.set(name, [])
-    chunksByDoc.get(name)!.push(chunk)
+  const validPeriods = new Set([...periods, ...MONTH_NAMES])
+  const { contextText, docCount } = buildContext(ragChunks)
+
+  const rows = section.requiredRows
+
+  if (rows.length <= ROW_BATCH_SIZE) {
+    // Single call path
+    return extractBatch(
+      contextText, docCount, ragChunks.length,
+      section.displayName, rows, periods, validPeriods, signal,
+    )
   }
 
-  const contextText = [...chunksByDoc.entries()]
-    .map(([docName, chunks]) => {
-      const body = chunks
-        .map((c, i) =>
-          `  [Chunk ${i + 1} | Page ${c.pageNumber ?? '?'} | Relevance ${c.score.toFixed(2)}]\n  ${c.text}`)
-        .join('\n\n')
-      return `╔══ Document: ${docName} ══╗\n${body}`
-    })
-    .join('\n\n')
+  // Multi-batch path — split rows into chunks, run in parallel
+  const batches: RowDef[][] = []
+  for (let i = 0; i < rows.length; i += ROW_BATCH_SIZE) {
+    batches.push(rows.slice(i, i + ROW_BATCH_SIZE))
+  }
 
-  const requiredRowsJson = JSON.stringify(
-    section.requiredRows.map(r => ({
-      row_key: r.rowKey,
-      label: r.label,
-      value_type: r.valueType,   // 'currency' | 'percent' | 'count' | 'text' | 'date'
-      is_calculated: r.isCalculated,
-    })),
-    null, 2
+  const results = await Promise.allSettled(
+    batches.map((batchRows, idx) =>
+      extractBatch(
+        contextText, docCount, ragChunks.length,
+        `${section.displayName} (part ${idx + 1}/${batches.length})`,
+        batchRows, periods, validPeriods, signal,
+      )
+    )
   )
 
-  const prompt = `\
-## Extract: "${section.displayName}" section
-
-## Required periods: ${periods.join(', ')}
-
-## Required rows — extract every row_key × period combination:
-${requiredRowsJson}
-
-## Source documents (${ragChunks.length} chunks across ${chunksByDoc.size} file(s)):
-${contextText}
-
-## Extraction checklist:
-1. Detect unit scale (thousands / millions / raw) from each document BEFORE reading values.
-2. Apply parenthetical-negative rule: (x) → negative.
-3. Map document period labels to the required period keys (FY20 / FY21 / FY22 / TTM).
-4. Search ALL chunks before marking anything as missing.
-5. For value_type "percent": output as a percentage number (e.g., 12.5 means 12.5%, not 0.125).
-6. For value_type "currency": output raw integer dollars after unit-scale conversion.
-7. Calculated rows (is_calculated: true) → extract stated total if present, else compute it.
-8. For rank-ordered generic row keys (vendor_1…vendor_N, product_line_1…product_line_N,
-   customer_1…customer_N): set display_value to "ActualName: $X,XXX,XXX" — include the
-   actual vendor / product / customer name from the document so it is preserved in the UI.
-9. In the "flags" array, include an entry for any cell where:
-   - Confidence < 0.65 (flag_type: "low_confidence", severity: "warning")
-   - Period-over-period variance >50% without an obvious explanation (flag_type: "discrepancy", severity: "warning")
-   - A calculated row does not reconcile with a stated total (flag_type: "discrepancy", severity: "critical")
-   - A one-time or non-recurring item is detected (flag_type: "ai_note", severity: "info")
-   If none of these apply, output an empty flags array.
-
-## Output — strict JSON, no markdown, no code fences:
-{
-  "cells": [
-    {
-      "row_key": "net_income",
-      "period": "FY22",
-      "raw_value": 7120305,
-      "display_value": "$7,120,305",
-      "source_page": 4,
-      "source_excerpt": "Net income for the year ended December 31, 2022: $7,120,305",
-      "source_filename": "audited_financials_2022.pdf",
-      "confidence": 0.97,
-      "is_calculated": false
+  const merged: { cells: ExtractedCell[]; missing: MissingField[]; flags: ExtractedFlag[] } = {
+    cells: [], missing: [], flags: [],
+  }
+  for (const result of results) {
+    if (result.status === 'fulfilled') {
+      merged.cells.push(...result.value.cells)
+      merged.missing.push(...result.value.missing)
+      merged.flags.push(...result.value.flags)
+    } else {
+      console.error('[gemini] batch failed:', result.reason)
     }
-  ],
-  "missing": [
-    {
-      "row_key": "bank_deposits",
-      "period": "FY21",
-      "reason": "January 2021 bank statement not present in uploaded documents",
-      "suggested_doc": "Bank Statements — 2021"
+  }
+  return merged
+}
+
+// ── Formula-based post-processing ─────────────────────────────────────────────
+
+/**
+ * Evaluate a simple arithmetic formula (no parentheses, linear operations).
+ * Formula syntax: "rowKey1+rowKey2-rowKey3" etc.
+ * Returns null if any referenced row is missing for this period.
+ */
+function evalFormula(formula: string, valueMap: Map<string, number | null>): number | null {
+  // Match operators and row-key tokens (letters, digits, underscores)
+  const tokens = formula.match(/[+\-*/]|[\w]+/g) ?? []
+  let result: number | null = null
+  let op = '+'
+
+  for (const token of tokens) {
+    if (token === '+' || token === '-' || token === '*' || token === '/') {
+      op = token
+      continue
     }
-  ],
-  "flags": [
-    {
-      "row_key": "net_income",
-      "period": "FY21",
-      "flag_type": "low_confidence",
-      "severity": "warning",
-      "title": "Low confidence — Net Income FY21",
-      "body": "Value could not be directly verified from source; derived from adjacent data."
+    const val = valueMap.get(token) ?? null
+    if (val === null) return null // missing component — cannot compute
+
+    if (result === null) {
+      result = val
+    } else {
+      switch (op) {
+        case '+': result += val; break
+        case '-': result -= val; break
+        case '*': result *= val; break
+        case '/': result = val !== 0 ? result / val : null; break
+      }
     }
-  ]
-}`
+  }
+  return result
+}
 
-  const rawText = await callGemini(prompt, signal)
+function formatForValueType(value: number, valueType: string): string {
+  if (valueType === 'percent') return `${value.toFixed(1)}%`
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: 0,
+  }).format(value)
+}
 
-  // Strip any accidental markdown fences the model may add
-  const cleaned = rawText
-    .replace(/^```(?:json)?\s*/im, '')
-    .replace(/\s*```\s*$/im, '')
-    .trim()
+/**
+ * Apply formula definitions to fill in any calculated rows that Gemini missed.
+ * Runs up to 3 passes to handle chains (A → B → C).
+ * Existing cells are never overwritten — this only adds missing ones.
+ */
+export function applyFormulas(
+  cells: ExtractedCell[],
+  rows: RowDef[],
+  periods: string[],
+): ExtractedCell[] {
+  const allCells = [...cells]
 
-  let parsed: { cells: ExtractedCell[]; missing: MissingField[]; flags: ExtractedFlag[] }
-  try {
-    parsed = JSON.parse(cleaned)
-  } catch (parseErr) {
-    const preview = cleaned.slice(0, 400)
-    console.error(`[gemini] JSON parse error — section "${section.key}":`, preview)
-    throw new Error(`Gemini returned unparseable JSON for section "${section.key}": ${preview}`)
+  for (let pass = 0; pass < 3; pass++) {
+    // Rebuild lookup maps each pass (newly added cells become available)
+    const existingKeys = new Set(allCells.map(c => `${c.row_key}:${c.period}`))
+    const valueMap = new Map<string, number | null>()
+    for (const c of allCells) {
+      if (c.raw_value !== null) valueMap.set(`${c.row_key}:${c.period}`, c.raw_value)
+    }
+
+    let addedAny = false
+
+    for (const row of rows) {
+      if (!row.formula || !row.isCalculated) continue
+
+      for (const period of periods) {
+        const key = `${row.rowKey}:${period}`
+        if (existingKeys.has(key)) continue
+
+        // Build a period-scoped value map for formula evaluation
+        const periodMap = new Map<string, number | null>()
+        for (const r of rows) {
+          const v = valueMap.get(`${r.rowKey}:${period}`)
+          if (v !== undefined) periodMap.set(r.rowKey, v)
+        }
+
+        const computed = evalFormula(row.formula, periodMap)
+        if (computed === null) continue // components not yet available
+
+        allCells.push({
+          row_key: row.rowKey,
+          period,
+          raw_value: Math.round(computed * 100) / 100,
+          display_value: formatForValueType(computed, row.valueType),
+          source_page: null,
+          source_excerpt: `Computed: ${row.formula}`,
+          source_filename: '',
+          confidence: 0.90,
+          is_calculated: true,
+        })
+        addedAny = true
+      }
+    }
+
+    if (!addedAny) break // converged — no new cells this pass
   }
 
-  // Validate + coerce every cell so the DB never receives bad types
-  // Allow workbook-configured periods AND month names (for margins-by-month section)
-  const MONTH_NAMES = new Set(['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'])
-  const validPeriods = new Set([...periods, ...MONTH_NAMES])
+  return allCells
+}
 
-  const cells: ExtractedCell[] = (parsed.cells ?? [])
-    .filter(Boolean)
-    .map(c => ({
-      row_key: String(c.row_key ?? ''),
-      period: String(c.period ?? ''),
-      raw_value: typeof c.raw_value === 'number' && isFinite(c.raw_value)
-        ? Math.round(c.raw_value * 100) / 100   // max 2 decimal places
-        : null,
-      display_value: String(c.display_value ?? ''),
-      source_page: typeof c.source_page === 'number' ? Math.floor(c.source_page) : null,
-      source_excerpt: String(c.source_excerpt ?? '').slice(0, 500),
-      source_filename: String(c.source_filename ?? ''),
-      confidence: Math.min(1, Math.max(0, Number(c.confidence ?? 0.5))),
-      is_calculated: Boolean(c.is_calculated),
-    }))
-    .filter(c => c.row_key && c.period && validPeriods.has(c.period))
+// ── Cross-section reconciliation ──────────────────────────────────────────────
 
-  const missing: MissingField[] = (parsed.missing ?? [])
-    .filter(Boolean)
-    .map(m => ({
-      row_key: String(m.row_key ?? ''),
-      period: String(m.period ?? ''),
-      reason: String(m.reason ?? ''),
-      suggested_doc: String(m.suggested_doc ?? ''),
-    }))
-    .filter(m => m.row_key && m.period && validPeriods.has(m.period))
+interface SectionCell {
+  section: string
+  row_key: string
+  period: string
+  raw_value: number | null
+}
 
-  const VALID_FLAG_TYPES = new Set(['low_confidence', 'discrepancy', 'needs_review', 'ai_note'])
-  const VALID_SEVERITIES = new Set(['info', 'warning', 'critical'])
+interface ReconciliationCheck {
+  section1: string; key1: string
+  section2: string; key2: string
+  /** Relative tolerance (e.g. 0.02 = 2%) */
+  tolerance: number
+  label: string
+  severity: ExtractedFlag['severity']
+}
 
-  const flags: ExtractedFlag[] = (parsed.flags ?? [])
-    .filter(Boolean)
-    .map(f => ({
-      row_key: String(f.row_key ?? ''),
-      period: String(f.period ?? ''),
-      flag_type: VALID_FLAG_TYPES.has(f.flag_type) ? f.flag_type : 'needs_review',
-      severity: VALID_SEVERITIES.has(f.severity) ? f.severity : 'warning',
-      title: String(f.title ?? '').slice(0, 200),
-      body: String(f.body ?? '').slice(0, 1000),
-    }))
-    .filter(f => f.row_key && f.period && f.title && validPeriods.has(f.period))
+const RECONCILIATION_CHECKS: ReconciliationCheck[] = [
+  {
+    section1: 'overview', key1: 'total_revenue',
+    section2: 'income-statement', key2: 'total_net_revenue',
+    tolerance: 0.02, label: 'Total Revenue', severity: 'warning',
+  },
+  {
+    section1: 'qoe', key1: 'net_income',
+    section2: 'income-statement', key2: 'net_income',
+    tolerance: 0.01, label: 'Net Income', severity: 'critical',
+  },
+  {
+    section1: 'qoe', key1: 'ebitda_as_defined',
+    section2: 'overview', key2: 'ebitda_as_defined',
+    tolerance: 0.01, label: 'EBITDA as Defined', severity: 'warning',
+  },
+  {
+    section1: 'cogs-vendors', key1: 'total_cogs',
+    section2: 'income-statement', key2: 'total_cogs',
+    tolerance: 0.02, label: 'Total COGS', severity: 'warning',
+  },
+  {
+    section1: 'customer-concentration', key1: 'total_revenue',
+    section2: 'overview', key2: 'total_revenue',
+    tolerance: 0.02, label: 'Customer Concentration vs. Revenue', severity: 'warning',
+  },
+  {
+    section1: 'proof-revenue', key1: 'gl_revenue',
+    section2: 'income-statement', key2: 'total_net_revenue',
+    tolerance: 0.05, label: 'GL Revenue vs. P&L Revenue', severity: 'warning',
+  },
+  {
+    // Balance sheet identity: total assets must equal total liabilities + equity
+    section1: 'balance-sheet', key1: 'total_assets',
+    section2: 'balance-sheet', key2: 'total_liabilities_equity',
+    tolerance: 0.005, label: 'Balance Sheet (Assets = L+E)', severity: 'critical',
+  },
+]
 
-  return { cells, missing, flags }
+/**
+ * Compare key metrics across sections and return discrepancy flags.
+ * Called once after all sections have been analysed.
+ */
+export function buildReconciliationFlags(
+  allCells: SectionCell[],
+  periods: string[],
+): ExtractedFlag[] {
+  const flags: ExtractedFlag[] = []
+
+  // Build lookup: section:rowKey:period → raw_value
+  const lookup = new Map<string, number | null>()
+  for (const c of allCells) {
+    lookup.set(`${c.section}:${c.row_key}:${c.period}`, c.raw_value)
+  }
+
+  for (const check of RECONCILIATION_CHECKS) {
+    for (const period of periods) {
+      const v1 = lookup.get(`${check.section1}:${check.key1}:${period}`)
+      const v2 = lookup.get(`${check.section2}:${check.key2}:${period}`)
+
+      if (v1 == null || v2 == null) continue // can't compare if either is missing
+
+      const avg = (Math.abs(v1) + Math.abs(v2)) / 2
+      if (avg === 0) continue
+
+      const relDiff = Math.abs(v1 - v2) / avg
+
+      if (relDiff > check.tolerance) {
+        const fmt = (n: number) => new Intl.NumberFormat('en-US', {
+          style: 'currency', currency: 'USD', minimumFractionDigits: 0,
+        }).format(n)
+
+        flags.push({
+          row_key: check.key1,
+          period,
+          flag_type: 'discrepancy',
+          severity: check.severity,
+          title: `Cross-section discrepancy: ${check.label} (${period})`,
+          body: `${check.section1}.${check.key1} = ${fmt(v1)} vs ${check.section2}.${check.key2} = ${fmt(v2)} — ${(relDiff * 100).toFixed(1)}% difference (tolerance ${(check.tolerance * 100).toFixed(0)}%).`,
+        })
+      }
+    }
+  }
+
+  return flags
 }
 
 // ── Workbook AI Chat ───────────────────────────────────────────────────────────
@@ -416,7 +701,6 @@ export interface WorkbookContext {
 }
 
 function buildWorkbookSystemPrompt(ctx: WorkbookContext): string {
-  // Organise cells by section → period table
   const sections = new Map<string, Map<string, Map<string, string>>>()
   for (const c of ctx.cells) {
     if (!sections.has(c.section)) sections.set(c.section, new Map())
@@ -479,7 +763,6 @@ export async function chatWithWorkbook(
   const url =
     `https://${LOCATION()}-aiplatform.googleapis.com/v1/projects/${PROJECT()}/locations/${LOCATION()}/publishers/google/models/${MODEL}:generateContent`
 
-  // Prepend cell reference context to the user message if provided
   const messageWithContext = cellRef
     ? `[Referencing metric: ${cellRef.label} | Period: ${cellRef.period} | Value: ${cellRef.displayValue}]\n\n${userMessage}`
     : userMessage

@@ -117,8 +117,11 @@ export async function POST(
   } catch (err) {
     console.error('GCS upload failed:', err)
     await serviceClient.from('documents').update({ ingestion_status: 'error' }).eq('id', doc.id)
-    // Still return success — file is in Supabase Storage; GCS can be retried
-    return NextResponse.json({ ...doc, storage_path: storagePath }, { status: 201 })
+    const msg = err instanceof Error ? err.message : String(err)
+    return NextResponse.json(
+      { error: `File saved but failed to reach AI pipeline: ${msg}. Please try uploading again.` },
+      { status: 500 }
+    )
   }
 
   // 4. Import into RAG corpus if already ready — async (corpus import takes 30-120s)
