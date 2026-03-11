@@ -1152,15 +1152,15 @@ export default function WorkbookPage({ params }: { params: Promise<{ id: string 
               <div className="rounded-lg border bg-card p-4">
                 <h3 className="text-sm font-semibold mb-1">Revenue Mix — TTM</h3>
                 <p className="text-xs text-muted-foreground mb-3">Share of total revenue by product</p>
-                <div className="h-56 flex items-center justify-center">
+                <div className="h-64 flex items-center justify-center">
                   <ResponsiveContainer width="100%" height="100%">
                     <RechartsPie>
                       <Pie
                         data={salesChannelData.filter(r => !r.isBold).map(r => ({ name: r.product.split(' ').slice(0,2).join(' '), value: r.revenue }))}
                         cx="50%"
                         cy="50%"
-                        innerRadius={55}
-                        outerRadius={88}
+                        innerRadius={45}
+                        outerRadius={72}
                         dataKey="value"
                         paddingAngle={2}
                       >
@@ -1169,7 +1169,7 @@ export default function WorkbookPage({ params }: { params: Promise<{ id: string 
                         ))}
                       </Pie>
                       <Tooltip formatter={(v: unknown) => formatCurrency(Number(v))} />
-                      <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 10 }} />
+                      <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 10, paddingTop: 12 }} />
                     </RechartsPie>
                   </ResponsiveContainer>
                 </div>
