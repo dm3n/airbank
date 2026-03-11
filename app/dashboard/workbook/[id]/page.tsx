@@ -807,8 +807,10 @@ export default function WorkbookPage({ params }: { params: Promise<{ id: string 
                               sourceRef={srcRef}
                               cellId={cellId}
                               workbookId={isDemoWorkbook ? undefined : id}
+                              flags={getCellFlags('qoe', rowKey, period)}
                               isEditable={!row.isBold}
                               onViewSource={handleViewSource}
+                              onFlagCreate={(f) => handleFlagCreate('qoe', rowKey, period, f)}
                             />
                           </TableCell>
                         )
@@ -913,8 +915,10 @@ export default function WorkbookPage({ params }: { params: Promise<{ id: string 
                                 sourceRef={srcRef}
                                 cellId={cellId}
                                 workbookId={isDemoWorkbook ? undefined : id}
+                                flags={getCellFlags('income-statement', rowKey, period)}
                                 isEditable={!row.isBold}
                                 onViewSource={handleViewSource}
+                                onFlagCreate={(f) => handleFlagCreate('income-statement', rowKey, period, f)}
                               />
                             </TableCell>
                           )
@@ -1015,8 +1019,10 @@ export default function WorkbookPage({ params }: { params: Promise<{ id: string 
                                 sourceRef={srcRef}
                                 cellId={cellId}
                                 workbookId={isDemoWorkbook ? undefined : id}
+                                flags={getCellFlags('balance-sheet', rowKey, period)}
                                 isEditable={!row.isBold}
                                 onViewSource={handleViewSource}
+                                onFlagCreate={(f) => handleFlagCreate('balance-sheet', rowKey, period, f)}
                               />
                             </TableCell>
                           )
@@ -1171,6 +1177,7 @@ export default function WorkbookPage({ params }: { params: Promise<{ id: string 
                             workbookId={isDemoWorkbook ? undefined : id}
                             onViewSource={handleViewSource}
                             onSave={fetchCells}
+                            onFlagCreate={(f) => handleFlagCreate('margins-month', 'revenue', row.month, f)}
                             period={row.month}
                           />
                         </TableCell>
@@ -1184,6 +1191,7 @@ export default function WorkbookPage({ params }: { params: Promise<{ id: string 
                             workbookId={isDemoWorkbook ? undefined : id}
                             onViewSource={handleViewSource}
                             onSave={fetchCells}
+                            onFlagCreate={(f) => handleFlagCreate('margins-month', 'cogs', row.month, f)}
                             period={row.month}
                           />
                         </TableCell>
@@ -1197,6 +1205,7 @@ export default function WorkbookPage({ params }: { params: Promise<{ id: string 
                             workbookId={isDemoWorkbook ? undefined : id}
                             onViewSource={handleViewSource}
                             onSave={fetchCells}
+                            onFlagCreate={(f) => handleFlagCreate('margins-month', 'opex', row.month, f)}
                             period={row.month}
                           />
                         </TableCell>
@@ -1273,6 +1282,7 @@ export default function WorkbookPage({ params }: { params: Promise<{ id: string 
                             workbookId={isDemoWorkbook ? undefined : id}
                             onViewSource={handleViewSource}
                             onSave={fetchCells}
+                            onFlagCreate={(f) => handleFlagCreate('proof-cash', 'bank_deposits', row.month, f)}
                             period={row.month}
                           />
                         </TableCell>
@@ -1286,6 +1296,7 @@ export default function WorkbookPage({ params }: { params: Promise<{ id: string 
                             workbookId={isDemoWorkbook ? undefined : id}
                             onViewSource={handleViewSource}
                             onSave={fetchCells}
+                            onFlagCreate={(f) => handleFlagCreate('proof-cash', 'beginning_ar', row.month, f)}
                             period={row.month}
                           />
                         </TableCell>
@@ -1299,6 +1310,7 @@ export default function WorkbookPage({ params }: { params: Promise<{ id: string 
                             workbookId={isDemoWorkbook ? undefined : id}
                             onViewSource={handleViewSource}
                             onSave={fetchCells}
+                            onFlagCreate={(f) => handleFlagCreate('proof-cash', 'ending_ar', row.month, f)}
                             period={row.month}
                           />
                         </TableCell>
@@ -1312,6 +1324,7 @@ export default function WorkbookPage({ params }: { params: Promise<{ id: string 
                             workbookId={isDemoWorkbook ? undefined : id}
                             onViewSource={handleViewSource}
                             onSave={fetchCells}
+                            onFlagCreate={(f) => handleFlagCreate('proof-cash', 'non_rev_deposits', row.month, f)}
                             period={row.month}
                           />
                         </TableCell>
@@ -1325,6 +1338,7 @@ export default function WorkbookPage({ params }: { params: Promise<{ id: string 
                             workbookId={isDemoWorkbook ? undefined : id}
                             onViewSource={handleViewSource}
                             onSave={fetchCells}
+                            onFlagCreate={(f) => handleFlagCreate('proof-cash', 'revenue_gl', row.month, f)}
                             period={row.month}
                           />
                         </TableCell>
@@ -1429,7 +1443,9 @@ export default function WorkbookPage({ params }: { params: Promise<{ id: string 
                             sourceRef={srcRef}
                             cellId={cellId}
                             workbookId={isDemoWorkbook ? undefined : id}
+                            flags={getCellFlags('working-capital', rowKey, 'TTM')}
                             onViewSource={handleViewSource}
+                            onFlagCreate={(f) => handleFlagCreate('working-capital', rowKey, 'TTM', f)}
                           />
                         </TableCell>
                         <TableCell className="text-right font-mono text-sm text-muted-foreground">
@@ -1534,7 +1550,9 @@ export default function WorkbookPage({ params }: { params: Promise<{ id: string 
                             sourceRef={getCellSourceRef('cogs-vendors', rowKey, 'TTM')}
                             cellId={getCellId('cogs-vendors', rowKey, 'TTM')}
                             workbookId={isDemoWorkbook ? undefined : id}
+                            flags={getCellFlags('cogs-vendors', rowKey, 'TTM')}
                             onViewSource={handleViewSource}
+                            onFlagCreate={(f) => handleFlagCreate('cogs-vendors', rowKey, 'TTM', f)}
                           />
                         </TableCell>
                         <TableCell className="text-right font-mono text-sm">{formatPercent(row.pct)}</TableCell>
@@ -1737,7 +1755,9 @@ export default function WorkbookPage({ params }: { params: Promise<{ id: string 
                                 sourceRef={srcRef}
                                 cellId={cellId}
                                 workbookId={isDemoWorkbook ? undefined : id}
+                                flags={getCellFlags('net-debt', row.rowKey, p)}
                                 onViewSource={handleViewSource}
+                                onFlagCreate={(f) => handleFlagCreate('net-debt', row.rowKey, p, f)}
                               />
                             ) : <span className="text-muted-foreground">—</span>}
                           </TableCell>
@@ -1870,7 +1890,9 @@ export default function WorkbookPage({ params }: { params: Promise<{ id: string 
                                   sourceRef={srcRef}
                                   cellId={cellId}
                                   workbookId={isDemoWorkbook ? undefined : id}
+                                  flags={getCellFlags('customer-concentration', row.rowKey, p)}
                                   onViewSource={handleViewSource}
+                                  onFlagCreate={(f) => handleFlagCreate('customer-concentration', row.rowKey, p, f)}
                                 />
                                 {pct && <span className="text-muted-foreground text-xs">{pct}%</span>}
                               </span>
@@ -2014,7 +2036,9 @@ export default function WorkbookPage({ params }: { params: Promise<{ id: string 
                                   sourceRef={srcRef}
                                   cellId={cellId}
                                   workbookId={isDemoWorkbook ? undefined : id}
+                                  flags={getCellFlags('proof-revenue', row.rowKey, p)}
                                   onViewSource={handleViewSource}
+                                  onFlagCreate={(f) => handleFlagCreate('proof-revenue', row.rowKey, p, f)}
                                 />
                               </span>
                             ) : <span className="text-muted-foreground">—</span>}
@@ -2113,7 +2137,9 @@ export default function WorkbookPage({ params }: { params: Promise<{ id: string 
                                 sourceRef={srcRef}
                                 cellId={cellId}
                                 workbookId={isDemoWorkbook ? undefined : id}
+                                flags={getCellFlags('cash-conversion', row.rowKey, p)}
                                 onViewSource={handleViewSource}
+                                onFlagCreate={(f) => handleFlagCreate('cash-conversion', row.rowKey, p, f)}
                               />
                             ) : <span className="text-muted-foreground">—</span>}
                           </TableCell>
@@ -2236,7 +2262,9 @@ export default function WorkbookPage({ params }: { params: Promise<{ id: string 
                                 sourceRef={srcRef}
                                 cellId={cellId}
                                 workbookId={isDemoWorkbook ? undefined : id}
+                                flags={getCellFlags('run-rate', row.rowKey, p)}
                                 onViewSource={handleViewSource}
+                                onFlagCreate={(f) => handleFlagCreate('run-rate', row.rowKey, p, f)}
                               />
                             ) : <span className="text-muted-foreground">—</span>}
                           </TableCell>
