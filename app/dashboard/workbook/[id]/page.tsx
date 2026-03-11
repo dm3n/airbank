@@ -250,7 +250,7 @@ export default function WorkbookPage({ params }: { params: Promise<{ id: string 
   const router = useRouter()
 
   // Real workbooks start on the live-data view; demo workbooks start on the overview chart view
-  const [activeSection, setActiveSection] = useState('complete-qoe')
+  const [activeSection, setActiveSection] = useState('qoe')
   const [settingsOpen, setSettingsOpen] = useState(false)
 
   // ── Live data layer ─────────────────────────────────────────────
@@ -515,7 +515,6 @@ export default function WorkbookPage({ params }: { params: Promise<{ id: string 
 
   // Sidebar sections
   const sections = [
-    { id: 'complete-qoe', name: 'Complete QoE', icon: BookOpen },
     { id: 'qoe', name: 'Quality of Earnings', icon: TrendingUp },
     { id: 'income-statement', name: 'Income Statement', icon: FileText },
     { id: 'balance-sheet', name: 'Balance Sheet', icon: Scale },
@@ -530,13 +529,11 @@ export default function WorkbookPage({ params }: { params: Promise<{ id: string 
     { id: 'run-rate', name: 'Run-Rate & Pro Forma', icon: BarChart3 },
     { id: 'cogs-vendors', name: 'COGS Vendors', icon: Package },
     { id: 'testing', name: 'AP/Accrual Testing', icon: ClipboardCheck },
-    { id: 'charts', name: 'Analytics', icon: BarChart3 },
     { id: 'risk-diligence', name: 'Risk & Diligence', icon: Shield },
   ]
 
 
   const SECTION_DISPLAY: Record<string, string> = {
-    'complete-qoe': 'Complete QoE',
     'qoe': 'Quality of Earnings',
     'income-statement': 'Income Statement',
     'balance-sheet': 'Balance Sheet',
@@ -551,13 +548,12 @@ export default function WorkbookPage({ params }: { params: Promise<{ id: string 
     'run-rate': 'Run-Rate',
     'cogs-vendors': 'COGS Vendors',
     'testing': 'AP Testing',
-    'charts': 'Analytics',
     'risk-diligence': 'Risk & Diligence',
   }
 
   const navigateToFlag = (flag: FlagItem) => {
     setFlagsOpen(false)
-    const targetSection = SECTION_DISPLAY[flag.section] ? flag.section : 'complete-qoe'
+    const targetSection = SECTION_DISPLAY[flag.section] ? flag.section : 'qoe'
     setActiveSection(targetSection)
     setPendingScroll(flag.row_key)
   }

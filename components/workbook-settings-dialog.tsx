@@ -51,6 +51,10 @@ export interface WorkbookSettingsDialogProps {
   onDeleted?: () => void
 }
 
+const connectedIntegrations = [
+  { name: 'Sandbox Alpine', status: 'complete' as const },
+]
+
 const integrations = [
   { name: 'Dropbox', logo: '/integrations/dropbox.png' },
   { name: 'OneDrive', logo: '/integrations/onedrive.png' },
@@ -361,6 +365,17 @@ export function WorkbookSettingsDialog({
 
         <div className="space-y-8">
           {/* Integration logos + upload zone */}
+          {connectedIntegrations.length > 0 && (
+            <div className="flex items-center gap-2">
+              {connectedIntegrations.map((ci) => (
+                <div key={ci.name} className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-blue-50 border border-blue-200">
+                  <CheckCircle2 className="h-3.5 w-3.5 text-blue-600" />
+                  <span className="text-xs font-medium text-blue-700">{ci.name}</span>
+                  <span className="text-[10px] text-blue-500 capitalize">{ci.status}</span>
+                </div>
+              ))}
+            </div>
+          )}
           <div className="relative mt-12">
             <div className="absolute -top-8 left-0 right-0 z-10 flex items-center gap-3 px-4">
               <span className="text-xs text-gray-500 whitespace-nowrap">Integrate with the tools you already use</span>
