@@ -295,6 +295,12 @@ export default function WorkbookPage({ params }: { params: Promise<{ id: string 
   const [pendingScroll, setPendingScroll] = useState<string | null>(null)
   const mainScrollRef = useRef<HTMLDivElement>(null)
   const [completeness, setCompleteness] = useState<number | null>(null)
+  const [reconciliation, setReconciliation] = useState<{
+    status: 'PASS' | 'WARN' | 'FAIL' | 'UNAVAILABLE'
+    legs: { type: string; labelA: string; labelB: string; status: string; overallVariancePct: number | null; discrepancies: { period: string; description: string }[] }[]
+    total_discrepancies: number
+    critical_count: number
+  } | null>(null)
   const { chatOpen, openChat, closeChat, setCellRef, flagsRefreshRef } = useLayoutContext()
 
   const workbookName = liveWorkbookName ?? DEMO_NAMES[id] ?? 'Workbook'
@@ -310,11 +316,12 @@ export default function WorkbookPage({ params }: { params: Promise<{ id: string 
     setCellsLoading(true)
     setCellsError(null)
     try {
-      const [cellsRes, wbRes, flagsRes, compRes] = await Promise.all([
+      const [cellsRes, wbRes, flagsRes, compRes, reconRes] = await Promise.all([
         fetch(`/api/workbooks/${id}/cells`),
         fetch(`/api/workbooks/${id}`),
         fetch(`/api/workbooks/${id}/flags`),
         fetch(`/api/workbooks/${id}/completeness`),
+        fetch(`/api/workbooks/${id}/reconciliation`),
       ])
       if (cellsRes.status === 401) {
         router.push('/')
@@ -339,6 +346,10 @@ export default function WorkbookPage({ params }: { params: Promise<{ id: string 
       if (compRes.ok) {
         const compData = await compRes.json()
         if (typeof compData.overall === 'number') setCompleteness(compData.overall)
+      }
+      if (reconRes.ok) {
+        const reconData = await reconRes.json()
+        if (reconData.status) setReconciliation(reconData)
       }
     } catch (err) {
       setCellsError(err instanceof Error ? err.message : 'Failed to load workbook data')
@@ -1959,7 +1970,51 @@ export default function WorkbookPage({ params }: { params: Promise<{ id: string 
         return (
           <div>
             <h2 className="text-2xl font-bold mb-2">Proof of Revenue — Three-Way Match</h2>
-            <p className="text-sm text-muted-foreground mb-6">GL revenue vs. tax return vs. bank deposits reconciliation</p>
+            <p className="text-sm text-muted-foreground mb-4">GL revenue vs. tax return vs. bank deposits reconciliation</p>
+            {/* Reconciliation status banner */}
+            {!isDemoWorkbook && reconciliation && reconciliation.status !== 'UNAVAILABLE' && (
+              <div className={`rounded-lg border p-4 mb-6 ${
+                reconciliation.status === 'PASS' ? 'bg-blue-50 border-blue-200' :
+                reconciliation.status === 'WARN' ? 'bg-amber-50 border-amber-200' :
+                'bg-red-50 border-red-200'
+              }`}>
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <span className={`text-sm font-semibold ${
+                      reconciliation.status === 'PASS' ? 'text-blue-700' :
+                      reconciliation.status === 'WARN' ? 'text-amber-700' :
+                      'text-red-700'
+                    }`}>
+                      Three-Way Match: {reconciliation.status === 'PASS' ? 'Clean' : reconciliation.status === 'WARN' ? 'Minor Variances' : 'Significant Variances'}
+                    </span>
+                    <Badge className={
+                      reconciliation.status === 'PASS' ? 'bg-blue-600 hover:bg-blue-700 text-xs' :
+                      reconciliation.status === 'WARN' ? 'bg-amber-500 hover:bg-amber-600 text-xs' :
+                      'bg-red-600 hover:bg-red-700 text-xs'
+                    }>{reconciliation.status}</Badge>
+                  </div>
+                  {reconciliation.critical_count > 0 && (
+                    <span className="text-xs text-red-600 font-medium">{reconciliation.critical_count} critical variance{reconciliation.critical_count !== 1 ? 's' : ''}</span>
+                  )}
+                </div>
+                <div className="flex gap-4">
+                  {reconciliation.legs.map(leg => (
+                    <div key={leg.type} className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                      <span className={`w-2 h-2 rounded-full flex-shrink-0 ${leg.status === 'PASS' ? 'bg-blue-500' : leg.status === 'WARN' ? 'bg-amber-500' : leg.status === 'FAIL' ? 'bg-red-500' : 'bg-gray-300'}`} />
+                      <span>{leg.labelA} vs {leg.labelB}</span>
+                      <span className="font-medium">{leg.status === 'UNAVAILABLE' ? 'N/A' : leg.overallVariancePct !== null ? `${(leg.overallVariancePct * 100).toFixed(2)}%` : leg.status}</span>
+                    </div>
+                  ))}
+                </div>
+                {reconciliation.total_discrepancies > 0 && (
+                  <div className="mt-3 space-y-1">
+                    {reconciliation.legs.flatMap(l => l.discrepancies).slice(0, 3).map((d, i) => (
+                      <p key={i} className="text-xs text-muted-foreground">{d.description}</p>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
             {/* Chart */}
             <div className="rounded-lg border bg-card p-4 mb-8">
               <h3 className="text-sm font-semibold mb-1">Three-Way Revenue Comparison</h3>
@@ -2336,8 +2391,8 @@ export default function WorkbookPage({ params }: { params: Promise<{ id: string 
                   className={
                     workbookStatus === 'ready'
                       ? 'bg-blue-600 hover:bg-blue-700'
-                      : workbookStatus === 'needs_input'
-                      ? 'bg-gray-500 hover:bg-gray-600'
+                      : workbookStatus === 'needs_input' || workbookStatus === 'needs_more_data'
+                      ? 'bg-amber-500 hover:bg-amber-600'
                       : workbookStatus === 'analyzing'
                       ? 'bg-gray-400 hover:bg-gray-500'
                       : workbookStatus === 'error'
@@ -2349,6 +2404,8 @@ export default function WorkbookPage({ params }: { params: Promise<{ id: string 
                     ? 'Ready'
                     : workbookStatus === 'needs_input'
                     ? 'Needs Input'
+                    : workbookStatus === 'needs_more_data'
+                    ? 'Incomplete Data'
                     : workbookStatus === 'analyzing'
                     ? 'Analyzing...'
                     : workbookStatus === 'error'
