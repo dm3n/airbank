@@ -103,6 +103,7 @@ export function AuditableCell({
   const [flagBody, setFlagBody] = useState('')
   const [flagType, setFlagType] = useState('needs_review')
   const [isSubmittingFlag, setIsSubmittingFlag] = useState(false)
+  const [flagSuccess, setFlagSuccess] = useState(false)
 
   const displayedValue = localDisplay ?? value
   const unresolvedFlags = flags.filter(f => !f.resolved_at)
@@ -181,7 +182,9 @@ export function AuditableCell({
       setFlagTitle('')
       setFlagBody('')
       setFlagType('needs_review')
+      setFlagSuccess(true)
       setActiveTab('flags')
+      setTimeout(() => setFlagSuccess(false), 3000)
     } finally {
       setIsSubmittingFlag(false)
     }
@@ -221,19 +224,17 @@ export function AuditableCell({
               >
                 Source
               </button>
-              {(hasFlags || flags.length > 0) && (
-                <button
-                  className={`text-xs px-2 py-1 rounded flex items-center gap-1 ${activeTab === 'flags' ? 'bg-muted font-medium' : 'text-muted-foreground hover:text-foreground'}`}
-                  onClick={() => setActiveTab('flags')}
-                >
-                  Flags
-                  {unresolvedFlags.length > 0 && (
-                    <span className="bg-blue-500 text-white text-[10px] rounded-full px-1 leading-none py-0.5">
-                      {unresolvedFlags.length}
-                    </span>
-                  )}
-                </button>
-              )}
+              <button
+                className={`text-xs px-2 py-1 rounded flex items-center gap-1 ${activeTab === 'flags' ? 'bg-muted font-medium' : 'text-muted-foreground hover:text-foreground'}`}
+                onClick={() => setActiveTab('flags')}
+              >
+                Flags
+                {unresolvedFlags.length > 0 && (
+                  <span className="bg-blue-500 text-white text-[10px] rounded-full px-1 leading-none py-0.5">
+                    {unresolvedFlags.length}
+                  </span>
+                )}
+              </button>
               <button
                 className={`text-xs px-2 py-1 rounded ${activeTab === 'flag-form' ? 'bg-muted font-medium' : 'text-muted-foreground hover:text-foreground'}`}
                 onClick={() => setActiveTab('flag-form')}
@@ -319,6 +320,12 @@ export function AuditableCell({
 
             {activeTab === 'flags' && (
               <div className="space-y-2">
+                {flagSuccess && (
+                  <div className="flex items-center gap-1.5 text-xs text-blue-600 bg-blue-50 rounded px-2 py-1.5">
+                    <Check className="h-3 w-3 flex-shrink-0" />
+                    Flag saved — refreshing…
+                  </div>
+                )}
                 {flags.length === 0 ? (
                   <p className="text-xs text-muted-foreground text-center py-2">No flags on this cell.</p>
                 ) : (

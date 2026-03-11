@@ -291,6 +291,7 @@ export default function WorkbookPage({ params }: { params: Promise<{ id: string 
   const [flags, setFlags] = useState<FlagItem[]>([])
   const [flagsOpen, setFlagsOpen] = useState(false)
   const [pendingScroll, setPendingScroll] = useState<string | null>(null)
+  const [pendingScrollFallback, setPendingScrollFallback] = useState<string | null>(null)
   const mainScrollRef = useRef<HTMLDivElement>(null)
   const [completeness, setCompleteness] = useState<number | null>(null)
   const [reconciliation, setReconciliation] = useState<{
@@ -360,29 +361,42 @@ export default function WorkbookPage({ params }: { params: Promise<{ id: string 
     fetchCells()
   }, [fetchCells])
 
-  // Scroll to flagged metric after section switch — retries until element renders
+  // Scroll to flagged metric after section switch — retries until element renders.
+  // For period-per-row sections (margins-month, proof-cash) rows are keyed by month
+  // string, so we fall back to pendingScrollFallback (the flag's period) if the
+  // primary row_key element is not found after exhausting retries.
   useEffect(() => {
     if (!pendingScroll) return
     let attempts = 0
     let timerId: ReturnType<typeof setTimeout>
+    const highlight = (el: HTMLElement) => {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      el.style.transition = 'background-color 0.4s'
+      el.style.backgroundColor = '#eff6ff'
+      setTimeout(() => { el.style.backgroundColor = '' }, 2000)
+    }
     const tryScroll = () => {
       const el = document.querySelector(`[data-row-key="${pendingScroll}"]`) as HTMLElement | null
       if (el) {
-        el.scrollIntoView({ behavior: 'smooth', block: 'center' })
-        el.style.transition = 'background-color 0.4s'
-        el.style.backgroundColor = '#eff6ff'
-        setTimeout(() => { el.style.backgroundColor = '' }, 2000)
+        highlight(el)
         setPendingScroll(null)
+        setPendingScrollFallback(null)
       } else if (attempts < 6) {
         attempts++
         timerId = setTimeout(tryScroll, 150)
       } else {
+        // Primary key not found — try the period fallback (month string for row-per-period sections)
+        if (pendingScrollFallback) {
+          const fallbackEl = document.querySelector(`[data-row-key="${pendingScrollFallback}"]`) as HTMLElement | null
+          if (fallbackEl) highlight(fallbackEl)
+        }
         setPendingScroll(null)
+        setPendingScrollFallback(null)
       }
     }
     timerId = setTimeout(tryScroll, 200)
     return () => clearTimeout(timerId)
-  }, [pendingScroll, activeSection])
+  }, [pendingScroll, activeSection, pendingScrollFallback])
 
   // Register fetchCells so the AI panel (in layout) can refresh cells after flag changes
   useEffect(() => {
@@ -429,11 +443,42 @@ export default function WorkbookPage({ params }: { params: Promise<{ id: string 
     [liveCellsMap]
   )
 
-  /** Get flags for a specific cell. */
+  // Index flags state by "section:row_key:period" for O(1) lookup.
+  // This is the source of truth — getCellFlags reads here first, then merges
+  // any additional flags that came via the cell FK join in liveCellsMap.
+  const flagsByKey = useMemo(() => {
+    const map = new Map<string, CellFlag[]>()
+    for (const flag of flags) {
+      const key = `${flag.section}:${flag.row_key}:${flag.period ?? ''}`
+      if (!map.has(key)) map.set(key, [])
+      map.get(key)!.push({
+        id: flag.id,
+        flag_type: flag.flag_type,
+        severity: flag.severity,
+        title: flag.title,
+        resolved_at: flag.resolved_at,
+        created_by_ai: flag.created_by_ai,
+      })
+    }
+    return map
+  }, [flags])
+
+  /** Get flags for a specific cell from both the flags endpoint and cell FK join. */
   const getCellFlags = useCallback(
-    (section: string, rowKey: string, period: string): CellFlag[] =>
-      liveCellsMap.get(`${section}:${rowKey}:${period}`)?.flags ?? [],
-    [liveCellsMap]
+    (section: string, rowKey: string, period: string): CellFlag[] => {
+      // Primary: flags indexed from /flags endpoint (works even when cell_id is null)
+      const fromFlags =
+        flagsByKey.get(`${section}:${rowKey}:${period}`) ??
+        flagsByKey.get(`${section}:${rowKey}:`) ?? []
+      // Secondary: flags that came via cell FK join (avoid duplicates)
+      const fromCells = liveCellsMap.get(`${section}:${rowKey}:${period}`)?.flags ?? []
+      const merged = [...fromFlags]
+      for (const f of fromCells) {
+        if (!merged.find(x => x.id === f.id)) merged.push(f)
+      }
+      return merged
+    },
+    [flagsByKey, liveCellsMap]
   )
 
   const openFlagCount = useMemo(() => flags.filter(f => !f.resolved_at).length, [flags])
@@ -443,7 +488,7 @@ export default function WorkbookPage({ params }: { params: Promise<{ id: string 
     async (section: string, rowKey: string, period: string, flag: { title: string; body: string; flag_type: string }) => {
       if (!id || isDemoWorkbook) return
       const cellId = getCellId(section, rowKey, period)
-      await fetch(`/api/workbooks/${id}/flags`, {
+      const res = await fetch(`/api/workbooks/${id}/flags`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -457,6 +502,10 @@ export default function WorkbookPage({ params }: { params: Promise<{ id: string 
           cell_id: cellId ?? null,
         }),
       })
+      if (!res.ok) {
+        console.error('Flag create failed:', await res.text().catch(() => ''))
+        return
+      }
       await fetchCells()
     },
     [id, isDemoWorkbook, getCellId, fetchCells]
@@ -570,7 +619,13 @@ export default function WorkbookPage({ params }: { params: Promise<{ id: string 
     setFlagsOpen(false)
     const targetSection = SECTION_DISPLAY[flag.section] ? flag.section : 'qoe'
     setActiveSection(targetSection)
+    // Try row_key first; for period-per-row sections (margins-month, proof-cash)
+    // the row's data-row-key is the month string, so also try period as fallback.
     setPendingScroll(flag.row_key)
+    if (flag.period) {
+      // Store period as secondary scroll target — the useEffect will try it if row_key fails
+      setPendingScrollFallback(flag.period)
+    }
   }
 
   // ── Sandbox demo data for sections that otherwise only render live API data ──
@@ -1169,7 +1224,7 @@ export default function WorkbookPage({ params }: { params: Promise<{ id: string 
                     const gmPct = liveRev > 0 ? (grossMargin / liveRev) * 100 : 0
                     const nmPct = liveRev > 0 ? (netMargin   / liveRev) * 100 : 0
                     return (
-                      <TableRow key={idx}>
+                      <TableRow key={idx} data-row-key={row.month}>
                         <TableCell className="font-medium">{row.month}</TableCell>
                         <TableCell className="text-right font-mono text-sm">
                           <AuditableCell
@@ -1274,7 +1329,7 @@ export default function WorkbookPage({ params }: { params: Promise<{ id: string 
                     const calculated   = liveDeposits - liveBegAR + liveEndAR - liveNonRev
                     const variance     = calculated - liveRevGL
                     return (
-                      <TableRow key={idx}>
+                      <TableRow key={idx} data-row-key={row.month}>
                         <TableCell className="font-medium">{row.month}</TableCell>
                         <TableCell className="text-right font-mono text-sm">
                           <AuditableCell
