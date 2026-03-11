@@ -58,7 +58,7 @@ const qoeData = [
   { item: 'i) Above-Market Rent', fy20: 0, fy21: -158714, fy22: -162500, ttm: -168900, source: 'GL Acct #6500 - Normalize to market rate of $18/sqft vs $28/sqft paid (related party lease)', isAdjustment: true },
   { item: 'j) Normalize Owner Comp', fy20: -244500, fy21: -382300, fy22: -404000, ttm: -425900, source: 'Payroll Register - Reduce total owner comp to market CEO salary of $175K + benefits', isAdjustment: true },
   { item: 'Total Diligence Adjustments', fy20: -244500, fy21: -423614, fy22: -335450, ttm: -340800, source: 'Sum of Diligence Add-backs (Net)', isBold: true },
-  { item: 'Diligence-Adjusted EBITDA', fy20: 4875291, fy21: 6524835, fy22: 7682947, ttm: 8547239, source: 'Final Normalized Run-Rate EBITDA - Buyer Perspective', isBold: true },
+  { item: 'Diligence-Adjusted EBITDA', fy20: 4631291, fy21: 6261935, fy22: 7463097, ttm: 8246439, source: 'Final Normalized Run-Rate EBITDA - Buyer Perspective', isBold: true },
 ]
 
 // Income Statement Data
@@ -639,9 +639,9 @@ export default function WorkbookPage({ params }: { params: Promise<{ id: string 
       case 'qoe': {
         const qoeTtmRev = getLiveValue('overview', 'total_revenue', 'TTM') ?? 68293742
         const qoeTtmBase = getLiveValue('qoe', 'ebitda_as_defined', 'TTM') ?? 7960816
-        const qoeTtmAdj = getLiveValue('qoe', 'diligence_adjusted_ebitda', 'TTM') ?? 8547239
+        const qoeTtmAdj = getLiveValue('qoe', 'diligence_adjusted_ebitda', 'TTM') ?? 8246439
         const qoeNetAdj = qoeTtmAdj - qoeTtmBase
-        const qoeAdjMargin = qoeTtmRev > 0 ? (qoeTtmAdj / qoeTtmRev) * 100 : 12.5
+        const qoeAdjMargin = qoeTtmRev > 0 ? (qoeTtmAdj / qoeTtmRev) * 100 : 12.1
 
         // Build TTM EBITDA waterfall — range bar approach: [start, end] per bar
         type WfItem = { name: string; value: number; isBase?: boolean; isEnd?: boolean }
@@ -1678,15 +1678,22 @@ export default function WorkbookPage({ params }: { params: Promise<{ id: string 
                 <p className="text-xs text-muted-foreground mb-3">Top 10 customers + all other</p>
                 <div className="h-52">
                   <ResponsiveContainer width="100%" height="100%">
-                    <RechartsPie data={[
-                      { name: 'Acme Mfg', value: (isDemoWorkbook ? DEMO_CUST_CONC.customer_1?.TTM : getLiveValue('customer-concentration','customer_1','TTM')) ?? 0 },
-                      { name: 'Nexgen', value: (isDemoWorkbook ? DEMO_CUST_CONC.customer_2?.TTM : getLiveValue('customer-concentration','customer_2','TTM')) ?? 0 },
-                      { name: 'Bridgewater', value: (isDemoWorkbook ? DEMO_CUST_CONC.customer_3?.TTM : getLiveValue('customer-concentration','customer_3','TTM')) ?? 0 },
-                      { name: 'Summit', value: (isDemoWorkbook ? DEMO_CUST_CONC.customer_4?.TTM : getLiveValue('customer-concentration','customer_4','TTM')) ?? 0 },
-                      { name: 'Crestwood', value: (isDemoWorkbook ? DEMO_CUST_CONC.customer_5?.TTM : getLiveValue('customer-concentration','customer_5','TTM')) ?? 0 },
-                      { name: 'All Other', value: (isDemoWorkbook ? DEMO_CUST_CONC.all_other_customers?.TTM : getLiveValue('customer-concentration','all_other_customers','TTM')) ?? 0 },
-                    ].filter(d => d.value > 0)} cx="50%" cy="50%" innerRadius={50} outerRadius={84}>
-                      {['#2563EB','#7C3AED','#0EA5E9','#10B981','#F59E0B','#94A3B8'].map((c, i) => <Cell key={i} fill={c} />)}
+                    <RechartsPie>
+                      <Pie
+                        data={[
+                          { name: 'Acme Mfg', value: (isDemoWorkbook ? DEMO_CUST_CONC.customer_1?.TTM : getLiveValue('customer-concentration','customer_1','TTM')) ?? 0 },
+                          { name: 'Nexgen', value: (isDemoWorkbook ? DEMO_CUST_CONC.customer_2?.TTM : getLiveValue('customer-concentration','customer_2','TTM')) ?? 0 },
+                          { name: 'Bridgewater', value: (isDemoWorkbook ? DEMO_CUST_CONC.customer_3?.TTM : getLiveValue('customer-concentration','customer_3','TTM')) ?? 0 },
+                          { name: 'Summit', value: (isDemoWorkbook ? DEMO_CUST_CONC.customer_4?.TTM : getLiveValue('customer-concentration','customer_4','TTM')) ?? 0 },
+                          { name: 'Crestwood', value: (isDemoWorkbook ? DEMO_CUST_CONC.customer_5?.TTM : getLiveValue('customer-concentration','customer_5','TTM')) ?? 0 },
+                          { name: 'All Other', value: (isDemoWorkbook ? DEMO_CUST_CONC.all_other_customers?.TTM : getLiveValue('customer-concentration','all_other_customers','TTM')) ?? 0 },
+                        ].filter(d => d.value > 0)}
+                        cx="50%" cy="50%"
+                        innerRadius={50} outerRadius={84}
+                        dataKey="value"
+                      >
+                        {['#2563EB','#7C3AED','#0EA5E9','#10B981','#F59E0B','#94A3B8'].map((c, i) => <Cell key={i} fill={c} />)}
+                      </Pie>
                       <Tooltip formatter={(v: number | undefined) => formatCurrency(v ?? 0)} />
                       <Legend wrapperStyle={{ fontSize: 10 }} />
                     </RechartsPie>
@@ -1747,8 +1754,10 @@ export default function WorkbookPage({ params }: { params: Promise<{ id: string 
                         const val = live ?? (isDemoWorkbook ? (DEMO_CUST_CONC[row.rowKey]?.[p] ?? null) : null)
                         const srcRef = getCellSourceRef('customer-concentration', row.rowKey, p)
                         const cellId = getCellId('customer-concentration', row.rowKey, p)
-                        const pct = (val !== null && DEMO_CUST_CONC.total_revenue?.[p])
-                          ? (val / DEMO_CUST_CONC.total_revenue[p]! * 100).toFixed(1)
+                        const totalRev = getLiveValue('customer-concentration', 'total_revenue', p)
+                          ?? (isDemoWorkbook ? DEMO_CUST_CONC.total_revenue?.[p] ?? null : null)
+                        const pct = (val !== null && totalRev && totalRev > 0 && row.rowKey !== 'total_revenue')
+                          ? (val / totalRev * 100).toFixed(1)
                           : null
                         return (
                           <TableCell key={p} className="text-right font-mono text-sm">
@@ -2145,7 +2154,7 @@ export default function WorkbookPage({ params }: { params: Promise<{ id: string 
               <div className="rounded-lg border bg-blue-50 border-blue-200 p-4">
                 <p className="text-xs font-semibold text-blue-800 mb-1">Pro Forma EBITDA (TTM)</p>
                 <p className="text-xl font-bold text-blue-700">$9.2M</p>
-                <p className="text-xs text-blue-600 mt-1">12.9% pro forma margin vs. 12.5% TTM</p>
+                <p className="text-xs text-blue-600 mt-1">12.9% pro forma margin vs. 12.1% TTM</p>
               </div>
               <div className="rounded-lg border bg-slate-50 p-4">
                 <p className="text-xs font-semibold text-muted-foreground mb-1">Note</p>
@@ -2192,7 +2201,7 @@ export default function WorkbookPage({ params }: { params: Promise<{ id: string 
             const isCompleteQoe = section.id === 'complete-qoe'
             const nextSection = sections[idx + 1]
             return (
-              <div key={section.id}>
+              <div key={section.id} suppressHydrationWarning>
                 <div
                   suppressHydrationWarning
                   onClick={() => setActiveSection(section.id)}

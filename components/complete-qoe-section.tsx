@@ -160,8 +160,8 @@ function buildWaterfallPoints(items: BridgeItem[]): WaterfallPoint[] {
 
 const OVERVIEW_DEMO = {
   revenue:   [42187456, 51482903, 62745381, 68293742],
-  adjEbitda: [4875291,  6524835,  7682947,  8547239],
-  margin:    [11.6, 12.7, 12.2, 12.5],
+  adjEbitda: [4631291,  6261935,  7463097,  8246439],
+  margin:    [11.0, 12.2, 11.9, 12.1],
 }
 
 const DEMO_BRIDGE_ITEMS: BridgeItem[] = [
@@ -207,8 +207,8 @@ const DEMO_CUSTOMERS = [
 const DEMO_TOTAL_REV = DEMO_CUSTOMERS.reduce((s, c) => s + c.value, 0)
 
 const DEMO_CASH_CONV = {
-  FY22: { ebitda: 7682947, capex: 384147, wc: 192075, taxes: 307317, interest: 61245, fcf: 6738163 },
-  TTM:  { ebitda: 8547239, capex: 427361, wc: 256417, taxes: 341889, interest: 65182, fcf: 7456390 },
+  FY22: { ebitda: 7463097, capex: 384147, wc: 192075, taxes: 307317, interest: 61245, fcf: 6519313 },
+  TTM:  { ebitda: 8246439, capex: 427361, wc: 256417, taxes: 341889, interest: 65182, fcf: 7155590 },
 }
 
 const DEMO_PROOF = [
@@ -543,7 +543,7 @@ function QoeSection({
   const liveEbitda = getLive(liveCells, 'qoe', 'ebitda_as_defined', 'TTM')
   const liveAdjEbitda = getLive(liveCells, 'qoe', 'diligence_adjusted_ebitda', 'TTM')
   const ttmEbitda = liveEbitda ?? 7960816
-  const ttmAdjEbitda = liveAdjEbitda ?? 8547239
+  const ttmAdjEbitda = liveAdjEbitda ?? 8246439
   const totalAdj = ttmAdjEbitda - ttmEbitda
 
   const waterfallData = buildWaterfallPoints(DEMO_BRIDGE_ITEMS)
@@ -793,16 +793,16 @@ function RunRateSubSection({ liveCells }: { liveCells: LiveCell[] }) {
           </tr>
           <tr className="border-b border-gray-100">
             <td className="py-1.5 text-muted-foreground">Adj. EBITDA</td>
-            <td className="text-right py-1.5">{fmt(8547239)}</td>
+            <td className="text-right py-1.5">{fmt(8246439)}</td>
             <td className="text-right py-1.5">{fmt(proFormaEbitda)}</td>
-            <td className="text-right py-1.5 text-emerald-600">+{fmtPct(((proFormaEbitda - 8547239) / 8547239) * 100)}</td>
+            <td className="text-right py-1.5 text-emerald-600">+{fmtPct(((proFormaEbitda - 8246439) / 8246439) * 100)}</td>
           </tr>
           <tr>
             <td className="py-2 text-muted-foreground">EBITDA Margin</td>
-            <td className="text-right py-2">{fmtPct(12.5)}</td>
+            <td className="text-right py-2">{fmtPct(12.1)}</td>
             <td className="text-right py-2">{fmtPct(proFormaMargin)}</td>
             <td className="text-right py-2 text-muted-foreground">
-              {proFormaMargin >= 12.5 ? '+' : ''}{fmtPct(proFormaMargin - 12.5)}
+              {proFormaMargin >= 12.1 ? '+' : ''}{fmtPct(proFormaMargin - 12.1)}
             </td>
           </tr>
         </tbody>
