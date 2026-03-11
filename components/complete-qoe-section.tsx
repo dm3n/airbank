@@ -44,6 +44,7 @@ interface Props {
   onViewSource: (sourceRef: SourceRef) => void
   onCellSave?: () => void
   onCellReference?: (ctx: { label: string; period: string; displayValue: string }) => void
+  onFlagCreate?: (section: string, rowKey: string, period: string, flag: { title: string; body: string; flag_type: string }) => void
 }
 
 // ─── Formatters ───────────────────────────────────────────────────────────────
@@ -532,6 +533,7 @@ function QoeSection({
   onViewSource,
   onCellSave,
   onCellReference,
+  onFlagCreate,
 }: {
   liveCells: LiveCell[]
   workbookId: string
@@ -539,7 +541,10 @@ function QoeSection({
   onViewSource: (s: SourceRef) => void
   onCellSave?: () => void
   onCellReference?: (ctx: { label: string; period: string; displayValue: string }) => void
+  onFlagCreate?: (section: string, rowKey: string, period: string, flag: { title: string; body: string; flag_type: string }) => void
 }) {
+  const bindFlag = (sec: string, rk: string, p: string) =>
+    onFlagCreate ? (flag: { title: string; body: string; flag_type: string }) => onFlagCreate(sec, rk, p, flag) : undefined
   const periods = ['FY20', 'FY21', 'FY22', 'TTM']
   const periodKeys = ['fy20', 'fy21', 'fy22', 'ttm'] as const
 
@@ -643,13 +648,14 @@ function QoeSection({
                     onViewSource={onViewSource}
                     onSave={onCellSave}
                     onReference={onCellReference}
+                    onFlagCreate={bindFlag('qoe', 'ebitda_as_defined', p)}
                     period={p}
                   />
                 </td>
               ))}
             </tr>
             {ADJ_ROWS.map((row) => (
-              <tr key={row.rowKey} className="border-b border-gray-100">
+              <tr key={row.rowKey} data-row-key={row.rowKey} className="border-b border-gray-100">
                 <td className="py-1.5 text-muted-foreground pl-4">{row.label}</td>
                 {periods.map((p, i) => {
                   const live = getLive(liveCells, 'qoe', row.rowKey, p)
@@ -666,6 +672,7 @@ function QoeSection({
                         onViewSource={onViewSource}
                         onSave={onCellSave}
                         onReference={onCellReference}
+                        onFlagCreate={bindFlag('qoe', row.rowKey, p)}
                         period={p}
                       />
                     </td>
@@ -693,6 +700,7 @@ function QoeSection({
                     onViewSource={onViewSource}
                     onSave={onCellSave}
                     onReference={onCellReference}
+                    onFlagCreate={bindFlag('qoe', 'diligence_adjusted_ebitda', p)}
                     period={p}
                   />
                 </td>
@@ -823,6 +831,7 @@ function RevenueSection({
   onViewSource,
   onCellSave,
   onCellReference,
+  onFlagCreate,
 }: {
   liveCells: LiveCell[]
   workbookId: string
@@ -830,7 +839,10 @@ function RevenueSection({
   onViewSource: (s: SourceRef) => void
   onCellSave?: () => void
   onCellReference?: (ctx: { label: string; period: string; displayValue: string }) => void
+  onFlagCreate?: (section: string, rowKey: string, period: string, flag: { title: string; body: string; flag_type: string }) => void
 }) {
+  const bindFlag = (sec: string, rk: string, p: string) =>
+    onFlagCreate ? (flag: { title: string; body: string; flag_type: string }) => onFlagCreate(sec, rk, p, flag) : undefined
   const maxVar = Math.max(...DEMO_PROOF.map((p) => Math.abs(((p.gl - p.tax) / p.gl) * 100)))
   const topCustomer = DEMO_CUSTOMERS[0]
   const top3Pct = DEMO_CUSTOMERS.slice(0, 3).reduce((s, c) => s + c.pct, 0)
@@ -906,6 +918,7 @@ function RevenueSection({
                       onViewSource={onViewSource}
                       onSave={onCellSave}
                       onReference={onCellReference}
+                      onFlagCreate={bindFlag('proof-revenue', row.rowKey, p.period)}
                       period={p.period}
                     />
                   </td>
@@ -986,6 +999,7 @@ function RevenueSection({
                     onViewSource={onViewSource}
                     onSave={onCellSave}
                     onReference={onCellReference}
+                    onFlagCreate={bindFlag('customer-concentration', rowKey, 'TTM')}
                     period="TTM"
                   />
                 </td>
@@ -1015,6 +1029,7 @@ function NetAssetsSection({
   onViewSource,
   onCellSave,
   onCellReference,
+  onFlagCreate,
 }: {
   liveCells: LiveCell[]
   workbookId: string
@@ -1022,7 +1037,10 @@ function NetAssetsSection({
   onViewSource: (s: SourceRef) => void
   onCellSave?: () => void
   onCellReference?: (ctx: { label: string; period: string; displayValue: string }) => void
+  onFlagCreate?: (section: string, rowKey: string, period: string, flag: { title: string; body: string; flag_type: string }) => void
 }) {
+  const bindFlag = (sec: string, rk: string, p: string) =>
+    onFlagCreate ? (flag: { title: string; body: string; flag_type: string }) => onFlagCreate(sec, rk, p, flag) : undefined
   const wcCurrent = WC_DEMO.reduce((s, r) => s + r.current, 0)
   const wcNormalized = WC_DEMO.reduce((s, r) => s + r.normalized, 0)
 
@@ -1087,6 +1105,7 @@ function NetAssetsSection({
                     onViewSource={onViewSource}
                     onSave={onCellSave}
                     onReference={onCellReference}
+                    onFlagCreate={bindFlag('working-capital', row.rowKey, 'TTM')}
                     period="TTM"
                   />
                 </td>
@@ -1151,6 +1170,7 @@ function NetAssetsSection({
                     onViewSource={onViewSource}
                     onSave={onCellSave}
                     onReference={onCellReference}
+                    onFlagCreate={bindFlag('net-debt', row.rowKey, 'TTM')}
                     period="TTM"
                   />
                 </td>
@@ -1169,6 +1189,7 @@ function NetAssetsSection({
                 onViewSource={onViewSource}
                 onSave={onCellSave}
                 onReference={onCellReference}
+                onFlagCreate={bindFlag('net-debt', 'total_debt_like_items', 'TTM')}
                 period="TTM"
               />
             </td>
@@ -1185,6 +1206,7 @@ function NetAssetsSection({
                 onViewSource={onViewSource}
                 onSave={onCellSave}
                 onReference={onCellReference}
+                onFlagCreate={bindFlag('net-debt', 'cash_and_equivalents', 'TTM')}
                 period="TTM"
               />
             </td>
@@ -1201,6 +1223,7 @@ function NetAssetsSection({
                 onViewSource={onViewSource}
                 onSave={onCellSave}
                 onReference={onCellReference}
+                onFlagCreate={bindFlag('net-debt', 'net_debt', 'TTM')}
                 period="TTM"
               />
             </td>
@@ -1220,6 +1243,7 @@ function CashFlowSection({
   onViewSource,
   onCellSave,
   onCellReference,
+  onFlagCreate,
 }: {
   liveCells: LiveCell[]
   workbookId: string
@@ -1227,7 +1251,10 @@ function CashFlowSection({
   onViewSource: (s: SourceRef) => void
   onCellSave?: () => void
   onCellReference?: (ctx: { label: string; period: string; displayValue: string }) => void
+  onFlagCreate?: (section: string, rowKey: string, period: string, flag: { title: string; body: string; flag_type: string }) => void
 }) {
+  const bindFlag = (sec: string, rk: string, p: string) =>
+    onFlagCreate ? (flag: { title: string; body: string; flag_type: string }) => onFlagCreate(sec, rk, p, flag) : undefined
   const ttmFcf = getLive(liveCells, 'cash-conversion', 'free_cash_flow', 'TTM') ?? DEMO_CASH_CONV.TTM.fcf
   const ttmEbitda = getLive(liveCells, 'cash-conversion', 'ebitda', 'TTM') ?? DEMO_CASH_CONV.TTM.ebitda
   const conversionRate = ttmEbitda > 0 ? (ttmFcf / ttmEbitda) * 100 : 0
@@ -1304,6 +1331,7 @@ function CashFlowSection({
                       onViewSource={onViewSource}
                       onSave={onCellSave}
                       onReference={onCellReference}
+                      onFlagCreate={bindFlag('cash-conversion', row.rowKey, 'FY22')}
                       period="FY22"
                     />
                   )}
@@ -1319,6 +1347,7 @@ function CashFlowSection({
                       onViewSource={onViewSource}
                       onSave={onCellSave}
                       onReference={onCellReference}
+                      onFlagCreate={bindFlag('cash-conversion', row.rowKey, 'TTM')}
                       period="TTM"
                     />
                   )}
@@ -1354,6 +1383,7 @@ function AppendicesSection({
   onViewSource,
   onCellSave,
   onCellReference,
+  onFlagCreate,
 }: {
   liveCells: LiveCell[]
   workbookId: string
@@ -1361,7 +1391,10 @@ function AppendicesSection({
   onViewSource: (s: SourceRef) => void
   onCellSave?: () => void
   onCellReference?: (ctx: { label: string; period: string; displayValue: string }) => void
+  onFlagCreate?: (section: string, rowKey: string, period: string, flag: { title: string; body: string; flag_type: string }) => void
 }) {
+  const bindFlag = (sec: string, rk: string, p: string) =>
+    onFlagCreate ? (flag: { title: string; body: string; flag_type: string }) => onFlagCreate(sec, rk, p, flag) : undefined
   return (
     <div>
       <SectionNumber>Section VII</SectionNumber>
@@ -1398,6 +1431,7 @@ function AppendicesSection({
                       onViewSource={onViewSource}
                       onSave={onCellSave}
                       onReference={onCellReference}
+                      onFlagCreate={bindFlag('margins-month', `revenue_${m.month.toLowerCase()}`, 'TTM')}
                       period="TTM"
                     />
                   </td>
@@ -1427,6 +1461,7 @@ function AppendicesSection({
                       onViewSource={onViewSource}
                       onSave={onCellSave}
                       onReference={onCellReference}
+                      onFlagCreate={bindFlag('margins-month', `cogs_${m.month.toLowerCase()}`, 'TTM')}
                       period="TTM"
                     />
                   </td>
@@ -1629,6 +1664,7 @@ export const CompleteQoeSection = memo(function CompleteQoeSection({
   onViewSource,
   onCellSave,
   onCellReference,
+  onFlagCreate,
 }: Props) {
   const sectionRefs = useRef<Record<string, HTMLDivElement | null>>({})
   const [activeAnchor, setActiveAnchor] = useState('sec-exec')
@@ -1655,7 +1691,7 @@ export const CompleteQoeSection = memo(function CompleteQoeSection({
     sectionRefs.current[id] = el
   }
 
-  const sharedProps = { liveCells, workbookId, isDemoWorkbook, onViewSource, onCellSave, onCellReference }
+  const sharedProps = { liveCells, workbookId, isDemoWorkbook, onViewSource, onCellSave, onCellReference, onFlagCreate }
 
   return (
     <div className="flex gap-10 max-w-6xl">

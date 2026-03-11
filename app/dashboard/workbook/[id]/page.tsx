@@ -360,22 +360,28 @@ export default function WorkbookPage({ params }: { params: Promise<{ id: string 
     fetchCells()
   }, [fetchCells])
 
-  // Scroll to flagged metric after section switch
+  // Scroll to flagged metric after section switch — retries until element renders
   useEffect(() => {
     if (!pendingScroll) return
-    const timer = setTimeout(() => {
+    let attempts = 0
+    let timerId: ReturnType<typeof setTimeout>
+    const tryScroll = () => {
       const el = document.querySelector(`[data-row-key="${pendingScroll}"]`) as HTMLElement | null
       if (el) {
         el.scrollIntoView({ behavior: 'smooth', block: 'center' })
-        el.style.transition = 'background-color 0.3s'
-        el.style.backgroundColor = '#fef2f2'
-        setTimeout(() => { el.style.backgroundColor = '' }, 1800)
-      } else if (mainScrollRef.current) {
-        mainScrollRef.current.scrollTo({ top: 0, behavior: 'smooth' })
+        el.style.transition = 'background-color 0.4s'
+        el.style.backgroundColor = '#eff6ff'
+        setTimeout(() => { el.style.backgroundColor = '' }, 2000)
+        setPendingScroll(null)
+      } else if (attempts < 6) {
+        attempts++
+        timerId = setTimeout(tryScroll, 150)
+      } else {
+        setPendingScroll(null)
       }
-      setPendingScroll(null)
-    }, 120)
-    return () => clearTimeout(timer)
+    }
+    timerId = setTimeout(tryScroll, 200)
+    return () => clearTimeout(timerId)
   }, [pendingScroll, activeSection])
 
   // Register fetchCells so the AI panel (in layout) can refresh cells after flag changes
@@ -633,6 +639,7 @@ export default function WorkbookPage({ params }: { params: Promise<{ id: string 
             onViewSource={handleViewSource}
             onCellSave={fetchCells}
             onCellReference={(ctx) => setCellRef(ctx)}
+            onFlagCreate={handleFlagCreate}
           />
         )
 
