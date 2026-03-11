@@ -83,7 +83,7 @@ export function MissingDataPrompt({ workbookId, requests, onResolved }: MissingD
 
         if (onResolved) onResolved()
       } catch (err) {
-        console.error('Upload error:', err)
+        void err // upload failed; uploadingFor cleared in finally
       } finally {
         setUploadingFor(null)
       }

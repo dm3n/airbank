@@ -111,7 +111,7 @@ export function WorkbookSettingsDialog({
       fetch(`/api/workbooks/${workbookId}/documents`)
         .then((r) => r.json())
         .then((data) => { if (Array.isArray(data)) setDocuments(data) })
-        .catch(console.error)
+        .catch(() => { /* fetch failed — docsLoading cleared in finally */ })
         .finally(() => setDocsLoading(false))
     }
     if (!open) {

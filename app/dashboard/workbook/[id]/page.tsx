@@ -147,7 +147,6 @@ const salesChannelData = [
 ]
 
 // Margins by Month Data (Last 12 months)
-const months = ['Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec', 'Jan']
 const marginsByMonthData = [
   { month: 'Feb', revenue: 5285000, cogs: 2272000, opex: 2431000 },
   { month: 'Mar', revenue: 5692000, cogs: 2448000, opex: 2620000 },
@@ -2205,7 +2204,7 @@ export default function WorkbookPage({ params }: { params: Promise<{ id: string 
                   <span className="text-sm">{section.name}</span>
                 </div>
                 {isCompleteQoe && nextSection && (
-                  <div className="my-3 mx-2 border-t border-border" />
+                  <div className="mt-4 mb-3 mx-6 border-t border-border/40" />
                 )}
               </div>
             )

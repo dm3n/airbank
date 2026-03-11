@@ -248,7 +248,7 @@ export function AIChatPanel({
         }])
       }
     }
-  }, [open, workbookId]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [open, workbookId, refreshFlags])
 
   useEffect(() => {
     if (cellRef && open) inputRef.current?.focus()
