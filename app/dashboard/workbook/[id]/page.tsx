@@ -247,6 +247,12 @@ export default function WorkbookPage({ params }: { params: Promise<{ id: string 
   const isDemoWorkbook = /^\d$/.test(id) || id === 'sandbox'
   const router = useRouter()
 
+  // Prevent SSR — Radix UI generates IDs via React useId() which are tree-position
+  // dependent. The complex conditional render tree here produces different IDs on
+  // server vs client, causing hydration mismatches. We defer rendering until mounted.
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => { setMounted(true) }, [])
+
   const [activeSection, setActiveSection] = useState('qoe')
   const [settingsOpen, setSettingsOpen] = useState(false)
 
@@ -2666,8 +2672,16 @@ export default function WorkbookPage({ params }: { params: Promise<{ id: string 
     }
   }
 
+  if (!mounted) {
+    return (
+      <div className="flex h-full items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    )
+  }
+
   return (
-    <div className="flex h-full" suppressHydrationWarning>
+    <div className="flex h-full">
       {/* Workbook Sidebar */}
       <div className="w-64 border-r bg-background flex flex-col overflow-y-auto">
         <div className="p-4 border-b">
