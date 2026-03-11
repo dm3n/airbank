@@ -525,23 +525,25 @@ export default function WorkbookPage({ params }: { params: Promise<{ id: string 
 
   // Sidebar sections
   const sections = [
-    { id: 'complete-qoe', name: 'Complete QoE', icon: FileText },
-    { id: 'qoe', name: 'Quality of Earnings', icon: TrendingUp },
-    { id: 'income-statement', name: 'Income Statement', icon: FileText },
-    { id: 'balance-sheet', name: 'Balance Sheet', icon: Scale },
-    { id: 'sales-channel', name: 'Sales by Channel', icon: ShoppingCart },
-    { id: 'margins-month', name: 'Margins by Month', icon: Calendar },
-    { id: 'proof-cash', name: 'Proof of Cash', icon: Banknote },
-    { id: 'three-way-match', name: 'Three-Way Match', icon: GitMerge },
-    { id: 'working-capital', name: 'Working Capital', icon: DollarSign },
-    { id: 'net-debt', name: 'Net Debt & Debt-Like Items', icon: Scale },
-    { id: 'customer-concentration', name: 'Customer Concentration', icon: PieChart },
-    { id: 'proof-revenue', name: 'Proof of Revenue', icon: FileBarChart },
-    { id: 'cash-conversion', name: 'Cash Conversion', icon: TrendingUp },
-    { id: 'run-rate', name: 'Run-Rate & Pro Forma', icon: BarChart3 },
-    { id: 'cogs-vendors', name: 'COGS Vendors', icon: Package },
-    { id: 'testing', name: 'AP/Accrual Testing', icon: ClipboardCheck },
-    { id: 'risk-diligence', name: 'Risk & Diligence', icon: Shield },
+    // ── Full report view
+    { id: 'complete-qoe',           name: 'Complete QoE',            icon: FileText    },
+    // ── P&L block
+    { id: 'qoe',                    name: 'Quality of Earnings',      icon: TrendingUp  },
+    { id: 'income-statement',       name: 'Income Statement',         icon: FileText    },
+    { id: 'margins-month',          name: 'Margins by Month',         icon: Calendar    },
+    // ── Balance sheet block
+    { id: 'balance-sheet',          name: 'Balance Sheet',            icon: Scale       },
+    { id: 'working-capital',        name: 'Working Capital',          icon: DollarSign  },
+    { id: 'net-debt',               name: 'Net Debt & Debt-Like Items',icon: Scale      },
+    // ── Revenue quality block
+    { id: 'sales-channel',          name: 'Sales by Channel',         icon: ShoppingCart},
+    { id: 'customer-concentration', name: 'Customer Concentration',   icon: PieChart    },
+    { id: 'proof-revenue',          name: 'Proof of Revenue',         icon: FileBarChart},
+    // ── Cash & bank reconciliation block
+    { id: 'proof-cash',             name: 'Proof of Cash',            icon: Banknote    },
+    { id: 'three-way-match',        name: 'Three-Way Match',          icon: GitMerge    },
+    // ── Diligence
+    { id: 'risk-diligence',         name: 'Risk & Diligence',         icon: Shield      },
   ]
 
 
@@ -2619,24 +2621,44 @@ export default function WorkbookPage({ params }: { params: Promise<{ id: string 
         </div>
 
         <div className="flex-1 p-3" suppressHydrationWarning>
-          {sections.map((section, idx) => {
+          {sections.map((section) => {
             const Icon = section.icon
-            const isCompleteQoe = section.id === 'complete-qoe'
-            const nextSection = sections[idx + 1]
+            const GROUP_LABELS: Record<string, string> = {
+              'qoe':                   'P&L',
+              'balance-sheet':         'Balance Sheet',
+              'sales-channel':         'Revenue Quality',
+              'proof-cash':            'Cash & Bank',
+              'risk-diligence':        'Diligence',
+            }
+            const groupLabel = GROUP_LABELS[section.id]
             return (
               <div key={section.id} suppressHydrationWarning>
-                <div
-                  suppressHydrationWarning
-                  onClick={() => setActiveSection(section.id)}
-                  className={`flex items-center px-3 py-2 rounded-md cursor-pointer hover:bg-accent mb-1 ${
-                    activeSection === section.id ? 'bg-accent' : ''
-                  }`}
-                >
-                  <Icon className="mr-2 h-4 w-4" suppressHydrationWarning />
-                  <span className="text-sm">{section.name}</span>
-                </div>
-                {isCompleteQoe && nextSection && (
-                  <div className="mt-4 mb-3 mx-6 border-t border-border/40" />
+                {section.id === 'complete-qoe' ? (
+                  <>
+                    <div
+                      suppressHydrationWarning
+                      onClick={() => setActiveSection(section.id)}
+                      className={`flex items-center px-3 py-2 rounded-md cursor-pointer hover:bg-accent mb-1 ${activeSection === section.id ? 'bg-accent' : ''}`}
+                    >
+                      <Icon className="mr-2 h-4 w-4" suppressHydrationWarning />
+                      <span className="text-sm">{section.name}</span>
+                    </div>
+                    <div className="mt-3 mb-2 mx-1 border-t border-border/40" />
+                  </>
+                ) : (
+                  <>
+                    {groupLabel && (
+                      <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground px-3 pt-3 pb-1">{groupLabel}</p>
+                    )}
+                    <div
+                      suppressHydrationWarning
+                      onClick={() => setActiveSection(section.id)}
+                      className={`flex items-center px-3 py-2 rounded-md cursor-pointer hover:bg-accent mb-0.5 ${activeSection === section.id ? 'bg-accent' : ''}`}
+                    >
+                      <Icon className="mr-2 h-4 w-4" suppressHydrationWarning />
+                      <span className="text-sm">{section.name}</span>
+                    </div>
+                  </>
                 )}
               </div>
             )
