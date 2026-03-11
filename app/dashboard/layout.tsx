@@ -24,7 +24,9 @@ function displayStatus(status: string): 'complete' | 'pending' | 'attention' {
   return 'pending'
 }
 
-const FALLBACK_WORKBOOKS: Workbook[] = []
+const FALLBACK_WORKBOOKS: Workbook[] = [
+  { id: 'sandbox', company_name: 'Sandbox — Alpine Outdoor Co.', status: 'ready' },
+]
 
 function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
@@ -45,7 +47,8 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
       if (!res.ok) { setWorkbooks(FALLBACK_WORKBOOKS); return }
       const data: Workbook[] = await res.json()
       const real = Array.isArray(data) ? data : []
-      setWorkbooks(real.length > 0 ? real : FALLBACK_WORKBOOKS)
+      // Always show sandbox first, then any real workbooks
+      setWorkbooks([FALLBACK_WORKBOOKS[0], ...real])
     } catch {
       setWorkbooks(FALLBACK_WORKBOOKS)
     }
