@@ -20,14 +20,13 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { Download, ChevronDown, FileSpreadsheet, Sheet, Database, FileBarChart, TrendingUp, FileText, Scale, DollarSign, ShoppingCart, Calendar, Banknote, Package, ClipboardCheck, BarChart3, PieChart, Settings, Loader2, Shield, BookOpen, Sparkles, Flag } from 'lucide-react'
+import { Download, ChevronDown, FileSpreadsheet, Sheet, Database, FileBarChart, TrendingUp, FileText, Scale, DollarSign, ShoppingCart, Calendar, Banknote, Package, ClipboardCheck, BarChart3, PieChart, Settings, Loader2, Shield, Sparkles, Flag } from 'lucide-react'
 import Image from 'next/image'
 import { AuditableCell, type SourceRef, type CellFlag } from '@/components/auditable-cell'
 import dynamic from 'next/dynamic'
 const WorkbookSettingsDialog = dynamic(() => import('@/components/workbook-settings-dialog').then(m => ({ default: m.WorkbookSettingsDialog })), { ssr: false })
 const DocumentViewerPanel = dynamic(() => import('@/components/document-viewer-panel').then(m => ({ default: m.DocumentViewerPanel })), { ssr: false })
 const RiskDiligenceSection = dynamic(() => import('@/components/risk-diligence-section').then(m => ({ default: m.RiskDiligenceSection })), { ssr: false, loading: () => <div className="animate-pulse h-64 rounded-lg bg-slate-50" /> })
-const CompleteQoeSection = dynamic(() => import('@/components/complete-qoe-section').then(m => ({ default: m.CompleteQoeSection })), { ssr: false, loading: () => <div className="animate-pulse h-64 rounded-lg bg-slate-50" /> })
 import { useLayoutContext } from '@/lib/layout-context'
 
 const formatCurrency = (value: number) => {
@@ -376,24 +375,27 @@ export default function WorkbookPage({ params }: { params: Promise<{ id: string 
     return () => { flagsRefreshRef.current = undefined }
   }, [fetchCells, flagsRefreshRef])
 
-  /** Get a numeric value from live cells, falling back to the hardcoded value. */
+  // O(1) lookup map — built once per liveCells update instead of O(n) per cell render
+  const liveCellsMap = useMemo(() => {
+    const map = new Map<string, LiveCell>()
+    for (const cell of liveCells) {
+      map.set(`${cell.section}:${cell.row_key}:${cell.period}`, cell)
+    }
+    return map
+  }, [liveCells])
+
+  /** Get a numeric value from live cells. */
   const getLiveValue = useCallback(
-    (section: string, rowKey: string, period: string): number | null => {
-      const cell = liveCells.find(
-        (c) => c.section === section && c.row_key === rowKey && c.period === period
-      )
-      return cell?.raw_value ?? null
-    },
-    [liveCells]
+    (section: string, rowKey: string, period: string): number | null =>
+      liveCellsMap.get(`${section}:${rowKey}:${period}`)?.raw_value ?? null,
+    [liveCellsMap]
   )
 
-  /** Build a SourceRef for a cell (if live data is available). */
+  /** Build a SourceRef for a cell. */
   const getCellSourceRef = useCallback(
     (section: string, rowKey: string, period: string): SourceRef | null => {
-      const cell = liveCells.find(
-        (c) => c.section === section && c.row_key === rowKey && c.period === period
-      )
-      if (!cell || !cell.source_document) return null
+      const cell = liveCellsMap.get(`${section}:${rowKey}:${period}`)
+      if (!cell?.source_document) return null
       return {
         documentId: cell.source_document.id,
         documentName: cell.source_document.file_name,
@@ -402,28 +404,21 @@ export default function WorkbookPage({ params }: { params: Promise<{ id: string 
         confidence: cell.confidence ?? 0,
       }
     },
-    [liveCells]
+    [liveCellsMap]
   )
 
   /** Get the cell id for persistence. */
   const getCellId = useCallback(
-    (section: string, rowKey: string, period: string): string | undefined => {
-      return liveCells.find(
-        (c) => c.section === section && c.row_key === rowKey && c.period === period
-      )?.id
-    },
-    [liveCells]
+    (section: string, rowKey: string, period: string): string | undefined =>
+      liveCellsMap.get(`${section}:${rowKey}:${period}`)?.id,
+    [liveCellsMap]
   )
 
   /** Get flags for a specific cell. */
   const getCellFlags = useCallback(
-    (section: string, rowKey: string, period: string): CellFlag[] => {
-      const cell = liveCells.find(
-        (c) => c.section === section && c.row_key === rowKey && c.period === period
-      )
-      return cell?.flags ?? []
-    },
-    [liveCells]
+    (section: string, rowKey: string, period: string): CellFlag[] =>
+      liveCellsMap.get(`${section}:${rowKey}:${period}`)?.flags ?? [],
+    [liveCellsMap]
   )
 
   const openFlagCount = useMemo(() => flags.filter(f => !f.resolved_at).length, [flags])
@@ -2277,22 +2272,6 @@ export default function WorkbookPage({ params }: { params: Promise<{ id: string 
               </div>
             </div>
           </div>
-        )
-
-      case 'complete-qoe':
-        return (
-          <CompleteQoeSection
-            liveCells={liveCells}
-            workbookId={id}
-            isDemoWorkbook={isDemoWorkbook}
-            periods={workbookPeriods}
-            onViewSource={handleViewSource}
-            onCellSave={fetchCells}
-            onCellReference={(ctx) => {
-              setCellRef(ctx)
-              openChat()
-            }}
-          />
         )
 
       case 'risk-diligence':

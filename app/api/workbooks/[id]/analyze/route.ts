@@ -518,8 +518,44 @@ export async function GET(
           console.error('Reconciliation step failed (non-fatal):', reconErr)
         }
 
-        // ── Final workbook status ──────────────────────────────────────────
-        const finalStatus = allMissing.length > 0 ? 'needs_input' : 'ready'
+        // ── Validation gate (Prompt 10) ────────────────────────────────────
+        // Require ≥60% completeness to reach draft_ready; otherwise needs_more_data.
+        let finalStatus = 'ready'
+        try {
+          const { data: allCells } = await serviceClient
+            .from('workbook_cells')
+            .select('section, row_key, period, raw_value')
+            .eq('workbook_id', workbookId)
+            .not('raw_value', 'is', null)
+
+          const inputSections = SECTION_CONFIGS.filter(s => s.key !== 'overview' && !s.overridePeriods)
+          let totalExpected = 0
+          let totalPopulated = 0
+          const populatedKeys = new Set((allCells ?? []).map(c => `${c.section}::${c.row_key}::${c.period}`))
+
+          for (const sec of inputSections) {
+            const inputRows = sec.requiredRows.filter(r => !r.formula && !r.isCalculated)
+            for (const row of inputRows) {
+              for (const period of workbookPeriods) {
+                totalExpected++
+                if (populatedKeys.has(`${sec.key}::${row.rowKey}::${period}`)) totalPopulated++
+              }
+            }
+          }
+
+          const completenessPercent = totalExpected > 0 ? Math.round((totalPopulated / totalExpected) * 100) : 0
+
+          if (completenessPercent < 60 || allMissing.length > 0) {
+            finalStatus = allMissing.length > 0 ? 'needs_input' : 'needs_more_data'
+          } else {
+            finalStatus = 'ready'
+          }
+
+          emit({ type: 'status', message: `Completeness: ${completenessPercent}% — status: ${finalStatus}` })
+        } catch {
+          finalStatus = allMissing.length > 0 ? 'needs_input' : 'ready'
+        }
+
         await serviceClient
           .from('workbooks')
           .update({ status: finalStatus })
